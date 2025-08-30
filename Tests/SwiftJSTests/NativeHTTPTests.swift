@@ -182,7 +182,7 @@ final class NativeHTTPTests: XCTestCase {
         // Create a JSContext for the test
         _ = JSContext()!
         
-        let task = session.dataTaskWithRequest(request, completionHandler: nil)
+    let task = session.dataTaskWithRequestCompletionHandler(request, nil)
         
         // Should return a Promise (JSValue)
         XCTAssertNotNil(task)
@@ -212,7 +212,7 @@ final class NativeHTTPTests: XCTestCase {
         let context = JSContext()!
         
         // Set up promise handling
-        let promise = session.dataTaskWithRequest(request, completionHandler: nil)
+    let promise = session.dataTaskWithRequestCompletionHandler(request, nil)
         XCTAssertNotNil(promise)
         
         // Add promise handlers
@@ -248,7 +248,7 @@ final class NativeHTTPTests: XCTestCase {
         
         let context = JSContext()!
         
-        let promise = session.dataTaskWithRequest(request, completionHandler: nil)
+    let promise = session.dataTaskWithRequestCompletionHandler(request, nil)
         XCTAssertNotNil(promise)
         
         let thenHandler = JSValue(newFunctionIn: context) { args, this in

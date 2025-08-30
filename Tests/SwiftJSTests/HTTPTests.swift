@@ -81,8 +81,6 @@ final class HTTPTests: XCTestCase {
     func testSimpleGETRequest() {
         let expectation = XCTestExpectation(description: "GET request completion")
         
-        
-        
         let script = """
             const xhr = new XMLHttpRequest();
             xhr.open('GET', 'https://httpbin.org/get');
@@ -101,7 +99,6 @@ final class HTTPTests: XCTestCase {
     context.evaluateScript(script)
         
     DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
       let result = self.context.evaluateScript("globalThis.getResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertTrue(result["success"].boolValue ?? false)

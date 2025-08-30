@@ -30,7 +30,9 @@ import JavaScriptCore
     init(configuration: JSURLSessionConfiguration)
     var configuration: JSURLSessionConfiguration { get }
     
-    func dataTaskWithRequest(_ request: JSURLRequest, completionHandler: JSValue?) -> JSValue?
+    func dataTaskWithRequestCompletionHandler(
+        _ request: JSURLRequest, _ completionHandler: JSValue?
+    ) -> JSValue?
     func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue?
 }
 
@@ -57,7 +59,9 @@ import JavaScriptCore
         return JSURLSessionConfiguration(configuration: self.session.configuration)
     }
     
-    func dataTaskWithRequest(_ request: JSURLRequest, completionHandler: JSValue?) -> JSValue? {
+    func dataTaskWithRequestCompletionHandler(
+        _ request: JSURLRequest, _ completionHandler: JSValue?
+    ) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
         return JSValue(newPromiseIn: context) { resolve, reject in
@@ -107,6 +111,6 @@ import JavaScriptCore
 
     func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue? {
         let request = JSURLRequest(url: url)
-        return dataTaskWithRequest(request, completionHandler: completionHandler)
+        return dataTaskWithRequestCompletionHandler(request, completionHandler)
     }
 }
