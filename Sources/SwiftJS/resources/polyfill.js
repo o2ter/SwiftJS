@@ -259,7 +259,13 @@ globalThis.XMLHttpRequest = class XMLHttpRequest extends EventTarget {
     }
 
     if (body !== null) {
-      if (typeof body === 'string') {
+      if (body instanceof FormData) {
+        const multipart = body._toMultipartString();
+        this._request.httpBody = multipart.body;
+        if (!this._requestHeaders['Content-Type']) {
+          this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
+        }
+      } else if (typeof body === 'string') {
         this._request.httpBody = body;
         if (!this._requestHeaders['Content-Type']) {
           this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
@@ -491,6 +497,10 @@ globalThis.Request = class Request {
 
     if (!this.body) return new ArrayBuffer(0);
     if (this.body instanceof ArrayBuffer) return this.body;
+    if (this.body instanceof FormData) {
+      const multipart = this.body._toMultipartString();
+      return new TextEncoder().encode(multipart.body).buffer;
+    }
     if (typeof this.body === 'string') {
       return new TextEncoder().encode(this.body).buffer;
     }
@@ -518,6 +528,10 @@ globalThis.Request = class Request {
 
     if (!this.body) return '';
     if (typeof this.body === 'string') return this.body;
+    if (this.body instanceof FormData) {
+      const multipart = this.body._toMultipartString();
+      return multipart.body;
+    }
 
     const buffer = await this.arrayBuffer();
     return new TextDecoder().decode(buffer);
@@ -575,6 +589,10 @@ globalThis.Response = class Response {
     if (this.body instanceof Uint8Array) {
       return this.body.buffer.slice(this.body.byteOffset, this.body.byteOffset + this.body.byteLength);
     }
+    if (this.body instanceof FormData) {
+      const multipart = this.body._toMultipartString();
+      return new TextEncoder().encode(multipart.body).buffer;
+    }
     if (typeof this.body === 'string') {
       return new TextEncoder().encode(this.body).buffer;
     }
@@ -602,6 +620,10 @@ globalThis.Response = class Response {
     if (this.body instanceof Uint8Array) {
       return new TextDecoder().decode(this.body);
     }
+    if (this.body instanceof FormData) {
+      const multipart = this.body._toMultipartString();
+      return multipart.body;
+    }
 
     const buffer = await this.arrayBuffer();
     return new TextDecoder().decode(buffer);
@@ -622,7 +644,11 @@ globalThis.fetch = async function fetch(input, init = {}) {
 
   // Set body
   if (request.body) {
-    if (typeof request.body === 'string') {
+    if (request.body instanceof FormData) {
+      const multipart = request.body._toMultipartString();
+      urlRequest.httpBody = multipart.body;
+      urlRequest.setValueForHTTPHeaderField(`multipart/form-data; boundary=${multipart.boundary}`, 'Content-Type');
+    } else if (typeof request.body === 'string') {
       urlRequest.httpBody = request.body;
     } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
       urlRequest.httpBody = new Uint8Array(request.body);
@@ -640,4 +666,193 @@ globalThis.fetch = async function fetch(input, init = {}) {
   });
 
   return response;
+};
+
+// FormData implementation
+globalThis.FormData = class FormData {
+  constructor(form) {
+    this._data = new Map();
+    
+    if (form && form.elements) {
+      // If a form element is passed, extract its data
+      for (const element of form.elements) {
+        if (element.name && !element.disabled) {
+          if (element.type === 'file') {
+            if (element.files) {
+              for (const file of element.files) {
+                this.append(element.name, file);
+              }
+            }
+          } else if (element.type === 'checkbox' || element.type === 'radio') {
+            if (element.checked) {
+              this.append(element.name, element.value);
+            }
+          } else if (element.type !== 'submit' && element.type !== 'button') {
+            this.append(element.name, element.value);
+          }
+        }
+      }
+    }
+  }
+
+  append(name, value, filename) {
+    const key = String(name);
+    
+    if (!this._data.has(key)) {
+      this._data.set(key, []);
+    }
+    
+    if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'File') {
+      // Handle File objects
+      this._data.get(key).push({
+        type: 'file',
+        value: value,
+        filename: filename || value.name || 'blob'
+      });
+    } else if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Blob') {
+      // Handle Blob objects
+      this._data.get(key).push({
+        type: 'blob',
+        value: value,
+        filename: filename || 'blob'
+      });
+    } else {
+      // Handle string values
+      this._data.get(key).push({
+        type: 'string',
+        value: String(value),
+        filename: null
+      });
+    }
+  }
+
+  delete(name) {
+    this._data.delete(String(name));
+  }
+
+  entries() {
+    const entries = [];
+    for (const [key, values] of this._data) {
+      for (const item of values) {
+        if (item.type === 'file' || item.type === 'blob') {
+          entries.push([key, item.value, item.filename]);
+        } else {
+          entries.push([key, item.value]);
+        }
+      }
+    }
+    return entries[Symbol.iterator]();
+  }
+
+  forEach(callback, thisArg) {
+    for (const [key, value] of this.entries()) {
+      callback.call(thisArg, value, key, this);
+    }
+  }
+
+  get(name) {
+    const values = this._data.get(String(name));
+    if (!values || values.length === 0) {
+      return null;
+    }
+    return values[0].value;
+  }
+
+  getAll(name) {
+    const values = this._data.get(String(name));
+    if (!values) {
+      return [];
+    }
+    return values.map(item => item.value);
+  }
+
+  has(name) {
+    return this._data.has(String(name));
+  }
+
+  keys() {
+    const keys = [];
+    for (const [key, values] of this._data) {
+      for (let i = 0; i < values.length; i++) {
+        keys.push(key);
+      }
+    }
+    return keys[Symbol.iterator]();
+  }
+
+  set(name, value, filename) {
+    const key = String(name);
+    this._data.delete(key);
+    this.append(key, value, filename);
+  }
+
+  values() {
+    const values = [];
+    for (const [key, items] of this._data) {
+      for (const item of items) {
+        values.push(item.value);
+      }
+    }
+    return values[Symbol.iterator]();
+  }
+
+  [Symbol.iterator]() {
+    return this.entries();
+  }
+
+  // Convert FormData to multipart/form-data string
+  _toMultipartString() {
+    const boundary = '----formdata-swiftjs-' + Math.random().toString(36).substr(2, 16);
+    let result = '';
+
+    for (const [key, values] of this._data) {
+      for (const item of values) {
+        result += `--${boundary}\r\n`;
+        
+        if (item.type === 'file' || item.type === 'blob') {
+          const filename = item.filename || 'blob';
+          const contentType = item.value.type || 'application/octet-stream';
+          result += `Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`;
+          result += `Content-Type: ${contentType}\r\n\r\n`;
+          
+          // For now, we'll convert blob/file to string representation
+          // In a real implementation, this would handle binary data properly
+          if (item.value.arrayBuffer) {
+            // This is a simplified approach for demo purposes
+            result += '[Binary Data]\r\n';
+          } else {
+            result += String(item.value) + '\r\n';
+          }
+        } else {
+          result += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
+          result += item.value + '\r\n';
+        }
+      }
+    }
+    
+    result += `--${boundary}--\r\n`;
+    
+    return {
+      boundary: boundary,
+      body: result
+    };
+  }
+
+  // Convert FormData to URL-encoded string
+  _toURLEncoded() {
+    const params = [];
+    
+    for (const [key, values] of this._data) {
+      for (const item of values) {
+        if (item.type === 'string') {
+          params.push(encodeURIComponent(key) + '=' + encodeURIComponent(item.value));
+        } else {
+          // Files and blobs are typically not supported in URL-encoded format
+          params.push(encodeURIComponent(key) + '=' + encodeURIComponent('[Object]'));
+        }
+      }
+    }
+    
+    return params.join('&');
+  }
 };
