@@ -143,6 +143,8 @@ extension SwiftJS {
             "FileSystem": .init(JSFileSystem.self, in: self),
             "URLSession": .init(JSURLSession.self, in: self),
             "URLSessionConfiguration": .init(JSURLSessionConfiguration.self, in: self),
+            "URLRequest": .init(JSURLRequest.self, in: self),
+            "URLResponse": .init(JSURLResponse.self, in: self)
         ]
         
         if let polyfillJs = Bundle.module.url(forResource: "polyfill", withExtension: "js"),

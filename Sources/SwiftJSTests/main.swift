@@ -37,8 +37,12 @@ let script1 = try String(contentsOf: script1URL!)
 let script2URL = Bundle.module.url(forResource: "script_2", withExtension: "js")
 let script2 = try String(contentsOf: script2URL!)
 
+let demoURL = Bundle.module.url(forResource: "demo", withExtension: "js")
+let demo = try String(contentsOf: demoURL!)
+
 context.evaluateScript(script1)
 context.evaluateScript(corejs)
 context.evaluateScript(script2)
+context.evaluateScript(demo)
 
 RunLoop.main.run()

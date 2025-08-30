@@ -56,7 +56,10 @@ let package = Package(
             resources: [
                 .copy("resources/corejs.js"),
                 .copy("resources/script_1.js"),
-                .copy("resources/script_2.js")
+                .copy("resources/script_2.js"),
+                .copy("resources/http_test.js"),
+                .copy("resources/debug_methods.js"),
+                .copy("resources/demo.js")
             ]
         ),
     ]
