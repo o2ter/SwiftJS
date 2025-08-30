@@ -26,19 +26,10 @@
 import XCTest
 @testable import SwiftJS
 
+@MainActor
 final class HTTPTests: XCTestCase {
     
-    var context: SwiftJS!
-    
-    override func setUp() {
-        super.setUp()
-        context = SwiftJS()
-    }
-    
-    override func tearDown() {
-        context = nil
-        super.tearDown()
-    }
+    let context = SwiftJS()
     
     // MARK: - JSURLRequest Tests
     
@@ -89,8 +80,8 @@ final class HTTPTests: XCTestCase {
     
     func testSimpleGETRequest() {
         let expectation = XCTestExpectation(description: "GET request completion")
-        let testContext = context  // Capture context to avoid self capture
-        let testContext = context  // Capture context to avoid self capture
+        
+        
         
         let script = """
             const xhr = new XMLHttpRequest();
@@ -107,11 +98,11 @@ final class HTTPTests: XCTestCase {
             xhr.send();
         """
         
-        testContext.evaluateScript(script)
+    context.evaluateScript(script)
         
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3))
-            let result = testContext.evaluateScript("globalThis.getResult")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.getResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertTrue(result["success"].boolValue ?? false)
             expectation.fulfill()
@@ -122,7 +113,7 @@ final class HTTPTests: XCTestCase {
     
     func testPOSTRequestWithData() {
         let expectation = XCTestExpectation(description: "POST request completion")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             const data = JSON.stringify({
@@ -151,11 +142,10 @@ final class HTTPTests: XCTestCase {
             xhr.send(data);
         """
         
-        testContext.evaluateScript(script)
+    context.evaluateScript(script)
         
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.postResult")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+      let result = self.context.evaluateScript("globalThis.postResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["dataReceived"].boolValue ?? false)
@@ -167,7 +157,7 @@ final class HTTPTests: XCTestCase {
     
     func testPUTRequest() {
         let expectation = XCTestExpectation(description: "PUT request completion")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/put', {
@@ -187,11 +177,11 @@ final class HTTPTests: XCTestCase {
             });
         """
         
-        testContext.evaluateScript(script)
+    context.evaluateScript(script)
         
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.putResult")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.putResult")
             XCTAssertEqual(result["method"].toString(), "PUT")
             XCTAssertEqual(result["json"]["action"].toString(), "update")
             expectation.fulfill()
@@ -202,7 +192,7 @@ final class HTTPTests: XCTestCase {
     
     func testDELETERequest() {
         let expectation = XCTestExpectation(description: "DELETE request completion")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/delete', {
@@ -221,11 +211,11 @@ final class HTTPTests: XCTestCase {
             });
         """
         
-        testContext.evaluateScript(script)
+    context.evaluateScript(script)
         
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.deleteResult")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.deleteResult")
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["ok"].boolValue ?? false)
             XCTAssertEqual(result["method"].toString(), "DELETE")
@@ -239,7 +229,7 @@ final class HTTPTests: XCTestCase {
     
     func testRequestHeaders() {
         let expectation = XCTestExpectation(description: "Request headers test")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/headers', {
@@ -259,11 +249,11 @@ final class HTTPTests: XCTestCase {
             });
         """
         
-        testContext.evaluateScript(script)
+    context.evaluateScript(script)
         
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.headersResult")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.headersResult")
             XCTAssertEqual(result["customHeader"].toString(), "SwiftJS-Test")
             XCTAssertEqual(result["userAgent"].toString(), "SwiftJS/1.0")
             XCTAssertEqual(result["accept"].toString(), "application/json")
@@ -277,7 +267,7 @@ final class HTTPTests: XCTestCase {
     
     func testJSONResponse() {
         let expectation = XCTestExpectation(description: "JSON response test")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/json')
@@ -290,11 +280,11 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
-        testContext.evaluateScript(script)
-        
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.jsonResult")
+    context.evaluateScript(script)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.jsonResult")
             XCTAssertTrue(result["hasSlideshow"].boolValue ?? false)
             XCTAssertEqual(result["author"].toString(), "Yours Truly")
             expectation.fulfill()
@@ -305,7 +295,7 @@ final class HTTPTests: XCTestCase {
     
     func testTextResponse() {
         let expectation = XCTestExpectation(description: "Text response test")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/robots.txt')
@@ -319,11 +309,11 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
-        testContext.evaluateScript(script)
-        
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.textResult")
+    context.evaluateScript(script)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.textResult")
             XCTAssertTrue(result["isString"].boolValue ?? false)
             XCTAssertTrue(result["hasContent"].boolValue ?? false)
             XCTAssertTrue(result["hasUserAgent"].boolValue ?? false)
@@ -337,7 +327,7 @@ final class HTTPTests: XCTestCase {
     
     func test404Response() {
         let expectation = XCTestExpectation(description: "404 response test")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/status/404')
@@ -350,11 +340,11 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
-        testContext.evaluateScript(script)
-        
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.notFoundResult")
+    context.evaluateScript(script)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.notFoundResult")
             XCTAssertEqual(result["status"].numberValue, 404)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -365,7 +355,7 @@ final class HTTPTests: XCTestCase {
     
     func test500Response() {
         let expectation = XCTestExpectation(description: "500 response test")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             fetch('https://httpbin.org/status/500')
@@ -377,11 +367,11 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
-        testContext.evaluateScript(script)
-        
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(3.0))
-            let result = testContext.evaluateScript("globalThis.serverErrorResult")
+    context.evaluateScript(script)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.serverErrorResult")
             XCTAssertEqual(result["status"].numberValue, 500)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -394,7 +384,7 @@ final class HTTPTests: XCTestCase {
     
     func testMultipleSimultaneousRequests() {
         let expectation = XCTestExpectation(description: "Multiple simultaneous requests")
-        let testContext = context  // Capture context to avoid self capture
+        
         
         let script = """
             const requests = [
@@ -412,11 +402,11 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
-        testContext.evaluateScript(script)
-        
-        Task { @MainActor in
-            try await Task.sleep(for: .seconds(5.0))
-            let result = testContext.evaluateScript("globalThis.multipleResult")
+    context.evaluateScript(script)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+
+      let result = self.context.evaluateScript("globalThis.multipleResult")
             XCTAssertEqual(result["count"].numberValue, 3)
             XCTAssertTrue(result["allOk"].boolValue ?? false)
             expectation.fulfill()
