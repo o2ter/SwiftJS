@@ -28,17 +28,7 @@ import XCTest
 
 final class MinimalHTTPTest: XCTestCase {
     
-    var context: SwiftJS!
-    
-    override func setUp() {
-        super.setUp()
-        context = SwiftJS()
-    }
-    
-    override func tearDown() {
-        context = nil
-        super.tearDown()
-    }
+    let context = SwiftJS()
     
     func testSwiftJSCanBeCreated() {
         XCTAssertNotNil(context)
