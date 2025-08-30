@@ -34,7 +34,7 @@ let package = Package(
         .iOS(.v17),
     ],
     products: [
-        .executable(name: "SwiftJSTests", targets: ["SwiftJSTests"]),
+        .executable(name: "SwiftJSDemo", targets: ["SwiftJSDemo"]),
         .library(name: "SwiftJS", targets: ["SwiftJS"])
     ],
     dependencies: [
@@ -50,8 +50,12 @@ let package = Package(
                 .copy("resources/polyfill.js")
             ]
         ),
-        .executableTarget(
+        .testTarget(
             name: "SwiftJSTests",
+            dependencies: ["SwiftJS"]
+        ),
+        .executableTarget(
+            name: "SwiftJSDemo",
             dependencies: ["SwiftJS"],
             resources: [
                 .copy("resources/corejs.js"),

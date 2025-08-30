@@ -118,3 +118,6 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - JavaScript resources are copied (not processed) in Package.swift
 - Swift resources use `.copy()` to preserve exact content
 - Both library and test targets have separate resource bundles
+
+## Temporary Files for Testing
+When creating temporary files to test code, place all test scripts under `<project_root>/.temp/` to keep the workspace organized and avoid conflicts with the main codebase.
