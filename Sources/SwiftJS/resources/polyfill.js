@@ -693,27 +693,6 @@ globalThis.fetch = async function fetch(input, init = {}) {
 globalThis.FormData = class FormData {
   constructor(form) {
     this._data = new Map();
-    
-    if (form && form.elements) {
-      // If a form element is passed, extract its data
-      for (const element of form.elements) {
-        if (element.name && !element.disabled) {
-          if (element.type === 'file') {
-            if (element.files) {
-              for (const file of element.files) {
-                this.append(element.name, file);
-              }
-            }
-          } else if (element.type === 'checkbox' || element.type === 'radio') {
-            if (element.checked) {
-              this.append(element.name, element.value);
-            }
-          } else if (element.type !== 'submit' && element.type !== 'button') {
-            this.append(element.name, element.value);
-          }
-        }
-      }
-    }
   }
 
   append(name, value, filename) {
