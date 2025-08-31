@@ -28,11 +28,11 @@ import XCTest
 
 final class PerformanceTests: XCTestCase {
     
-    let context = SwiftJS()
     
     // MARK: - Object Creation Performance
     
     func testXMLHttpRequestCreationPerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("new XMLHttpRequest()")
@@ -41,6 +41,7 @@ final class PerformanceTests: XCTestCase {
     }
     
     func testHeadersCreationPerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("new Headers({ 'Content-Type': 'application/json' })")
@@ -49,6 +50,7 @@ final class PerformanceTests: XCTestCase {
     }
     
     func testRequestCreationPerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("""
@@ -62,6 +64,7 @@ final class PerformanceTests: XCTestCase {
     }
     
     func testResponseCreationPerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("""
@@ -81,6 +84,7 @@ final class PerformanceTests: XCTestCase {
             const encoder = new TextEncoder();
             const text = 'Hello, World! This is a test string with some UTF-8 characters: 你好世界 🌍';
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
         
         measure {
@@ -97,6 +101,7 @@ final class PerformanceTests: XCTestCase {
             const text = 'Hello, World! This is a test string with some UTF-8 characters: 你好世界 🌍';
             const encoded = encoder.encode(text);
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
         
         measure {
@@ -121,8 +126,9 @@ final class PerformanceTests: XCTestCase {
                 return headers.get('content-type') + headers.get('authorization');
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("testHeaders()")
@@ -140,8 +146,9 @@ final class PerformanceTests: XCTestCase {
                 });
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("createPromise()")
@@ -161,8 +168,9 @@ final class PerformanceTests: XCTestCase {
                 target.removeEventListener('test', listener);
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("testEvents()")
@@ -184,8 +192,9 @@ final class PerformanceTests: XCTestCase {
             };
             const jsonString = JSON.stringify(largeData);
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             _ = context.evaluateScript("JSON.parse(jsonString)")
         }
@@ -197,8 +206,9 @@ final class PerformanceTests: XCTestCase {
             const decoder = new TextDecoder();
             const largeText = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(1000);
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             _ = context.evaluateScript("""
                 const encoded = encoder.encode(largeText);
@@ -224,8 +234,9 @@ final class PerformanceTests: XCTestCase {
                 return requests.length;
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             for _ in 0..<10 {
                 _ = context.evaluateScript("createManyRequests()")
@@ -246,8 +257,9 @@ final class PerformanceTests: XCTestCase {
                 return responses.length;
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         measure {
             for _ in 0..<10 {
                 _ = context.evaluateScript("createManyResponses()")
@@ -258,6 +270,7 @@ final class PerformanceTests: XCTestCase {
     // MARK: - Bridge Performance
     
     func testSwiftJavaScriptBridgePerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("__APPLE_SPEC__.processInfo.processIdentifier")
@@ -266,6 +279,7 @@ final class PerformanceTests: XCTestCase {
     }
     
     func testNativeURLRequestCreationPerformance() {
+        let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("new __APPLE_SPEC__.URLRequest('https://example.com')")
@@ -310,6 +324,7 @@ final class PerformanceTests: XCTestCase {
                 }));
             }
         """
+        let context = SwiftJS()
         context.evaluateScript(script)
         
         measure {
