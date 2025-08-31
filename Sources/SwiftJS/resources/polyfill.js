@@ -133,29 +133,28 @@ globalThis.TextEncoder = class TextEncoder {
     this.encoding = encoding;
   }
 
-  static byteLength(string) {
-    if (string == null) return 0;
-    if (typeof string !== 'string') string = String(string);
-    let len = 0;
-    for (let i = 0; i < string.length; i++) {
-      let c = string.charCodeAt(i);
-      if (c < 0x80) {
-        len += 1;
-      } else if (c < 0x800) {
-        len += 2;
-      } else if ((c & 0xFC00) === 0xD800 && i + 1 < string.length && (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-        // surrogate pair
-        i++;
-        len += 4;
-      } else {
-        len += 3;
-      }
-    }
-    return len;
-  }
-
   encode(string) {
-    const utf8 = new Uint8Array(TextEncoder.byteLength(string));
+    function byteLength(string) {
+      if (string == null) return 0;
+      if (typeof string !== 'string') string = String(string);
+      let len = 0;
+      for (let i = 0; i < string.length; i++) {
+        let c = string.charCodeAt(i);
+        if (c < 0x80) {
+          len += 1;
+        } else if (c < 0x800) {
+          len += 2;
+        } else if ((c & 0xFC00) === 0xD800 && i + 1 < string.length && (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
+          // surrogate pair
+          i++;
+          len += 4;
+        } else {
+          len += 3;
+        }
+      }
+      return len;
+    }
+    const utf8 = new Uint8Array(byteLength(string));
     let i = 0;
     for (let ci = 0; ci !== string.length; ci++) {
       let c = string.charCodeAt(ci);
