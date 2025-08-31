@@ -29,7 +29,6 @@ import XCTest
 @MainActor
 final class HTTPTests: XCTestCase {
     
-    let context = SwiftJS()
     
     // MARK: - JSURLRequest Tests
     
@@ -96,10 +95,11 @@ final class HTTPTests: XCTestCase {
             xhr.send();
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            let result = self.context.evaluateScript("globalThis.getResult")
+            let result = context.evaluateScript("globalThis.getResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertTrue(result["success"].boolValue ?? false)
             expectation.fulfill()
@@ -139,10 +139,11 @@ final class HTTPTests: XCTestCase {
             xhr.send(data);
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            let result = self.context.evaluateScript("globalThis.postResult")
+            let result = context.evaluateScript("globalThis.postResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["dataReceived"].boolValue ?? false)
@@ -174,11 +175,12 @@ final class HTTPTests: XCTestCase {
             });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.putResult")
+            let result = context.evaluateScript("globalThis.putResult")
             XCTAssertEqual(result["method"].toString(), "PUT")
             XCTAssertEqual(result["json"]["action"].toString(), "update")
             expectation.fulfill()
@@ -208,11 +210,12 @@ final class HTTPTests: XCTestCase {
             });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.deleteResult")
+            let result = context.evaluateScript("globalThis.deleteResult")
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["ok"].boolValue ?? false)
             XCTAssertEqual(result["method"].toString(), "DELETE")
@@ -246,11 +249,12 @@ final class HTTPTests: XCTestCase {
             });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.headersResult")
+            let result = context.evaluateScript("globalThis.headersResult")
             XCTAssertEqual(result["customHeader"].toString(), "SwiftJS-Test")
             XCTAssertEqual(result["userAgent"].toString(), "SwiftJS/1.0")
             XCTAssertEqual(result["accept"].toString(), "application/json")
@@ -277,11 +281,12 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.jsonResult")
+            let result = context.evaluateScript("globalThis.jsonResult")
             XCTAssertTrue(result["hasSlideshow"].boolValue ?? false)
             XCTAssertEqual(result["author"].toString(), "Yours Truly")
             expectation.fulfill()
@@ -306,11 +311,12 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.textResult")
+            let result = context.evaluateScript("globalThis.textResult")
             XCTAssertTrue(result["isString"].boolValue ?? false)
             XCTAssertTrue(result["hasContent"].boolValue ?? false)
             XCTAssertTrue(result["hasUserAgent"].boolValue ?? false)
@@ -337,11 +343,12 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.notFoundResult")
+            let result = context.evaluateScript("globalThis.notFoundResult")
             XCTAssertEqual(result["status"].numberValue, 404)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -364,11 +371,12 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.serverErrorResult")
+            let result = context.evaluateScript("globalThis.serverErrorResult")
             XCTAssertEqual(result["status"].numberValue, 500)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -399,11 +407,12 @@ final class HTTPTests: XCTestCase {
                 });
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
 
-            let result = self.context.evaluateScript("globalThis.multipleResult")
+            let result = context.evaluateScript("globalThis.multipleResult")
             XCTAssertEqual(result["count"].numberValue, 3)
             XCTAssertTrue(result["allOk"].boolValue ?? false)
             expectation.fulfill()

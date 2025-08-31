@@ -181,7 +181,9 @@ final class NativeHTTPTests: XCTestCase {
         
         // Create a JSContext for the test
         _ = JSContext()!
-        
+        // Ensure polyfills/native bindings are initialized
+        let _ = SwiftJS()
+
     let task = session.dataTaskWithRequestCompletionHandler(request, nil)
         
         // Should return a Promise (JSValue)
@@ -209,6 +211,8 @@ final class NativeHTTPTests: XCTestCase {
         let request = JSURLRequest(url: "https://httpbin.org/get")
         request.setValueForHTTPHeaderField("SwiftJS-Test", "X-Test-Header")
         
+        // Ensure SwiftJS polyfills are initialized for this test
+        let _ = SwiftJS()
         let context = JSContext()!
         
         // Set up promise handling
@@ -246,8 +250,10 @@ final class NativeHTTPTests: XCTestCase {
         let session = JSURLSession.getShared()
         let request = JSURLRequest(url: "https://invalid-domain-that-does-not-exist.com")
         
+        // Ensure SwiftJS polyfills are initialized for this test
+        let _ = SwiftJS()
         let context = JSContext()!
-        
+
     let promise = session.dataTaskWithRequestCompletionHandler(request, nil)
         XCTAssertNotNil(promise)
         
