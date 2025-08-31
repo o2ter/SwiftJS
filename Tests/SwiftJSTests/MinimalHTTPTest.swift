@@ -27,29 +27,29 @@ import XCTest
 @testable import SwiftJS
 
 final class MinimalHTTPTest: XCTestCase {
-    
-    let context = SwiftJS()
-    
-    func testSwiftJSCanBeCreated() {
-        XCTAssertNotNil(context)
-    }
+
+    // Each test creates its own SwiftJS context to avoid shared state
     
     func testBasicJavaScript() {
+        let context = SwiftJS()
         let result = context.evaluateScript("2 + 2")
         XCTAssertEqual(result.numberValue, 4.0)
     }
     
     func testXMLHttpRequestExists() {
+        let context = SwiftJS()
         let result = context.evaluateScript("typeof XMLHttpRequest")
         XCTAssertEqual(result.toString(), "function")
     }
     
     func testFetchExists() {
+        let context = SwiftJS()
         let result = context.evaluateScript("typeof fetch")
         XCTAssertEqual(result.toString(), "function")
     }
     
     func testHeadersExist() {
+        let context = SwiftJS()
         let result = context.evaluateScript("typeof Headers")
         XCTAssertEqual(result.toString(), "function")
     }
@@ -71,6 +71,7 @@ final class MinimalHTTPTest: XCTestCase {
             }
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
         let result = context.evaluateScript("globalThis.testSuccess")
         
@@ -81,6 +82,7 @@ final class MinimalHTTPTest: XCTestCase {
     }
     
     func testFormDataExists() {
+        let context = SwiftJS()
         let result = context.evaluateScript("typeof FormData")
         XCTAssertEqual(result.toString(), "function")
     }
@@ -109,6 +111,7 @@ final class MinimalHTTPTest: XCTestCase {
             }
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
         let result = context.evaluateScript("globalThis.formDataTest")
         
@@ -142,6 +145,7 @@ final class MinimalHTTPTest: XCTestCase {
             }
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
         let result = context.evaluateScript("globalThis.multiValueTest")
         
@@ -179,6 +183,7 @@ final class MinimalHTTPTest: XCTestCase {
             }
         """
         
+        let context = SwiftJS()
         context.evaluateScript(script)
         let result = context.evaluateScript("globalThis.formDataFetchTest")
         
