@@ -216,6 +216,153 @@ globalThis.TextDecoder = class TextDecoder {
   }
 };
 
+// Minimal Blob / File implementation
+// Supports parts made of: string, ArrayBuffer, TypedArray, Blob
+globalThis.Blob = class Blob {
+  constructor(parts = [], options = {}) {
+    this._parts = Array.isArray(parts) ? parts.slice() : [parts];
+    this.type = (options && options.type) ? String(options.type).toLowerCase() : '';
+    this.size = 0;
+    const encoder = new TextEncoder();
+    for (const part of this._parts) {
+      if (typeof part === 'string') {
+        this.size += encoder.encode(part).length;
+      } else if (part instanceof ArrayBuffer) {
+        this.size += part.byteLength;
+      } else if (ArrayBuffer.isView(part)) {
+        this.size += part.byteLength;
+      } else if (part && typeof part === 'object' && part.constructor && part.constructor.name === 'Blob') {
+        this.size += part.size || 0;
+      } else if (part == null) {
+        // ignore
+      } else {
+        // fallback to string conversion
+        const s = String(part);
+        this.size += encoder.encode(s).length;
+      }
+    }
+    // Common web API fields
+    this._type = this.type;
+    this[Symbol.toStringTag] = 'Blob';
+  }
+
+  async arrayBuffer() {
+    const encoder = new TextEncoder();
+    const chunks = [];
+    let total = 0;
+
+    for (const part of this._parts) {
+      if (typeof part === 'string') {
+        const u = encoder.encode(part);
+        chunks.push(u);
+        total += u.length;
+      } else if (part instanceof ArrayBuffer) {
+        const u = new Uint8Array(part);
+        chunks.push(u);
+        total += u.byteLength;
+      } else if (ArrayBuffer.isView(part)) {
+        const view = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
+        chunks.push(view);
+        total += view.byteLength;
+      } else if (part && typeof part === 'object' && part.constructor && part.constructor.name === 'Blob') {
+        const buff = await part.arrayBuffer();
+        const u = new Uint8Array(buff);
+        chunks.push(u);
+        total += u.byteLength;
+      } else if (part == null) {
+        // skip
+      } else {
+        const u = encoder.encode(String(part));
+        chunks.push(u);
+        total += u.length;
+      }
+    }
+
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      result.set(c, offset);
+      offset += c.byteLength;
+    }
+
+    return result.buffer;
+  }
+
+  async text() {
+    const buffer = await this.arrayBuffer();
+    return new TextDecoder().decode(new Uint8Array(buffer));
+  }
+
+  slice(start = 0, end = undefined, contentType = '') {
+    // Normalize bounds
+    const size = this.size || 0;
+    let relativeStart = start < 0 ? Math.max(size + start, 0) : Math.min(start, size);
+    let relativeEnd = end === undefined ? size : (end < 0 ? Math.max(size + end, 0) : Math.min(end, size));
+    const span = Math.max(relativeEnd - relativeStart, 0);
+
+    if (span === 0) return new Blob([], { type: contentType });
+
+    // Create a single-arrayBuffer and slice it
+    const self = this;
+    const sliced = (async function () {
+      const buffer = await self.arrayBuffer();
+      const u = new Uint8Array(buffer, relativeStart, span);
+      return new Blob([u], { type: contentType });
+    })();
+
+    // Return a Blob that will resolve its data when asked.
+    // For simplicity, return a Blob whose parts include an async placeholder Blob.
+    // The returned Blob should behave synchronously for size/type but arrayBuffer() will work.
+    const placeholder = new Blob([], { type: contentType });
+    // store the async part so placeholder.arrayBuffer() will use it
+    placeholder._parts = [{
+      __asyncBlob: true,
+      _promise: sliced
+    }];
+    placeholder.size = span;
+    return placeholder;
+  }
+};
+
+// Adjust Blob.arrayBuffer to handle async placeholder parts created by slice
+const _originalBlobArrayBuffer = globalThis.Blob.prototype.arrayBuffer;
+globalThis.Blob.prototype.arrayBuffer = async function () {
+  // If parts include async placeholders, await them
+  if (this._parts && this._parts.some(p => p && p.__asyncBlob)) {
+    const resolved = [];
+    for (const p of this._parts) {
+      if (p && p.__asyncBlob) {
+        const b = await p._promise;
+        // b is a Blob
+        const buff = await b.arrayBuffer();
+        resolved.push(new Uint8Array(buff));
+      } else {
+        resolved.push(p);
+      }
+    }
+    // temporarily replace parts and call original
+    const old = this._parts;
+    this._parts = resolved;
+    try {
+      return await _originalBlobArrayBuffer.call(this);
+    } finally {
+      this._parts = old;
+    }
+  }
+
+  return await _originalBlobArrayBuffer.call(this);
+};
+
+// File extends Blob
+globalThis.File = class File extends Blob {
+  constructor(parts, name, options = {}) {
+    super(parts, options);
+    this.name = String(name || '');
+    this.lastModified = options.lastModified || Date.now();
+    this[Symbol.toStringTag] = 'File';
+  }
+};
+
 // XMLHttpRequest implementation
 globalThis.XMLHttpRequest = class XMLHttpRequest extends EventTarget {
   static UNSENT = 0;
