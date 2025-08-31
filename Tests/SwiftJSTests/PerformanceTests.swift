@@ -211,9 +211,11 @@ final class PerformanceTests: XCTestCase {
 
         measure {
             _ = context.evaluateScript("""
-                const encoded = encoder.encode(largeText);
-                const decoded = decoder.decode(encoded);
-                decoded.length
+                (function() {
+                    const encoded = encoder.encode(largeText);
+                    const decoded = decoder.decode(encoded);
+                    return decoded.length;
+                })()
             """)
         }
     }
