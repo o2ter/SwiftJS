@@ -267,11 +267,28 @@
     }
 
     async arrayBuffer() {
+      // Build the parts to process: if any part is an async placeholder, resolve them first.
+      let partsToProcess = this[blobParts];
+      if (partsToProcess && partsToProcess.some(p => p && p.__asyncBlob)) {
+        const resolved = [];
+        for (const p of partsToProcess) {
+          if (p && p.__asyncBlob) {
+            const b = await p[blobPlaceholderPromise];
+            // b is a Blob
+            const buff = await b.arrayBuffer();
+            resolved.push(new Uint8Array(buff));
+          } else {
+            resolved.push(p);
+          }
+        }
+        partsToProcess = resolved;
+      }
+
       const encoder = new TextEncoder();
       const chunks = [];
       let total = 0;
 
-      for (const part of this[blobParts]) {
+      for (const part of partsToProcess) {
         if (typeof part === 'string') {
           const u = encoder.encode(part);
           chunks.push(u);
@@ -342,35 +359,6 @@
       placeholder.size = span;
       return placeholder;
     }
-  };
-
-  // Adjust Blob.arrayBuffer to handle async placeholder parts created by slice
-  const originalBlobArrayBuffer = globalThis.Blob.prototype.arrayBuffer;
-  globalThis.Blob.prototype.arrayBuffer = async function () {
-    // If parts include async placeholders, await them
-    if (this[blobParts] && this[blobParts].some(p => p && p.__asyncBlob)) {
-      const resolved = [];
-      for (const p of this[blobParts]) {
-        if (p && p.__asyncBlob) {
-          const b = await p[blobPlaceholderPromise];
-          // b is a Blob
-          const buff = await b.arrayBuffer();
-          resolved.push(new Uint8Array(buff));
-        } else {
-          resolved.push(p);
-        }
-      }
-      // temporarily replace parts and call original
-      const old = this[blobParts];
-      this[blobParts] = resolved;
-      try {
-        return await originalBlobArrayBuffer.call(this);
-      } finally {
-        this[blobParts] = old;
-      }
-    }
-
-    return await originalBlobArrayBuffer.call(this);
   };
 
   // File extends Blob
@@ -995,7 +983,9 @@
 
     // expose the multipart helper via symbol to keep module-local privacy
     [formDataToMultipart]() {
-      const boundary = '----formdata-swiftjs-' + Math.random().toString(36).substr(2, 16);
+      // Use the native Apple-provided crypto UUID directly (no redundant fallbacks)
+      const boundary = '----formdata-swiftjs-' + crypto.randomUUID();
+
       let result = '';
 
       for (const [key, values] of this[formDataData]) {
