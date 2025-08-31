@@ -984,7 +984,7 @@
     // expose the multipart helper via symbol to keep module-local privacy
     [formDataToMultipart]() {
       // Use the native Apple-provided crypto UUID directly (no redundant fallbacks)
-      const boundary = '----formdata-swiftjs-' + crypto.randomUUID();
+      const boundary = '----SwiftJSFormBoundary-' + crypto.randomUUID();
 
       let result = '';
 
