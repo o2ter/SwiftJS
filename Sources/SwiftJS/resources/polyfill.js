@@ -1,4 +1,14 @@
 ; (function () {
+  // Module-scoped symbols for internal, non-public APIs
+  const _formDataData = Symbol('FormData._data');
+  const _formDataToMultipart = Symbol('FormData._toMultipartString');
+  const _formDataToURLEncoded = Symbol('FormData._toURLEncoded');
+  const _blobParts = Symbol('Blob._parts');
+  const _blobType = Symbol('Blob._type');
+  const _blobPlaceholderPromise = Symbol('Blob._placeholderPromise');
+  const _headersMap = Symbol('Headers._headers');
+  const _requestBodyText = Symbol('Request._bodyText');
+
   globalThis.process = new class Process {
 
     #env = { ...__APPLE_SPEC__.processInfo.environment };
@@ -133,28 +143,29 @@
       this.encoding = encoding;
     }
 
-    encode(string) {
-      function byteLength(string) {
-        if (string == null) return 0;
-        if (typeof string !== 'string') string = String(string);
-        let len = 0;
-        for (let i = 0; i < string.length; i++) {
-          let c = string.charCodeAt(i);
-          if (c < 0x80) {
-            len += 1;
-          } else if (c < 0x800) {
-            len += 2;
-          } else if ((c & 0xFC00) === 0xD800 && i + 1 < string.length && (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-            // surrogate pair
-            i++;
-            len += 4;
-          } else {
-            len += 3;
-          }
+    static #byteLength(string) {
+      if (string == null) return 0;
+      if (typeof string !== 'string') string = String(string);
+      let len = 0;
+      for (let i = 0; i < string.length; i++) {
+        let c = string.charCodeAt(i);
+        if (c < 0x80) {
+          len += 1;
+        } else if (c < 0x800) {
+          len += 2;
+        } else if ((c & 0xFC00) === 0xD800 && i + 1 < string.length && (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
+          // surrogate pair
+          i++;
+          len += 4;
+        } else {
+          len += 3;
         }
-        return len;
       }
-      const utf8 = new Uint8Array(byteLength(string));
+      return len;
+    }
+
+    encode(string) {
+      const utf8 = new Uint8Array(TextEncoder.#byteLength(string));
       let i = 0;
       for (let ci = 0; ci !== string.length; ci++) {
         let c = string.charCodeAt(ci);
@@ -220,11 +231,11 @@
   // Supports parts made of: string, ArrayBuffer, TypedArray, Blob
   globalThis.Blob = class Blob {
     constructor(parts = [], options = {}) {
-      this._parts = Array.isArray(parts) ? parts.slice() : [parts];
+      this[_blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
       this.type = (options && options.type) ? String(options.type).toLowerCase() : '';
       this.size = 0;
       const encoder = new TextEncoder();
-      for (const part of this._parts) {
+      for (const part of this[_blobParts]) {
         if (typeof part === 'string') {
           this.size += encoder.encode(part).length;
         } else if (part instanceof ArrayBuffer) {
@@ -242,7 +253,7 @@
         }
       }
       // Common web API fields
-      this._type = this.type;
+      this[_blobType] = this.type;
       this[Symbol.toStringTag] = 'Blob';
     }
 
@@ -251,7 +262,7 @@
       const chunks = [];
       let total = 0;
 
-      for (const part of this._parts) {
+      for (const part of this[_blobParts]) {
         if (typeof part === 'string') {
           const u = encoder.encode(part);
           chunks.push(u);
@@ -315,9 +326,9 @@
       // The returned Blob should behave synchronously for size/type but arrayBuffer() will work.
       const placeholder = new Blob([], { type: contentType });
       // store the async part so placeholder.arrayBuffer() will use it
-      placeholder._parts = [{
+      placeholder[_blobParts] = [{
         __asyncBlob: true,
-        _promise: sliced
+        [_blobPlaceholderPromise]: sliced
       }];
       placeholder.size = span;
       return placeholder;
@@ -328,11 +339,11 @@
   const _originalBlobArrayBuffer = globalThis.Blob.prototype.arrayBuffer;
   globalThis.Blob.prototype.arrayBuffer = async function () {
     // If parts include async placeholders, await them
-    if (this._parts && this._parts.some(p => p && p.__asyncBlob)) {
+    if (this[_blobParts] && this[_blobParts].some(p => p && p.__asyncBlob)) {
       const resolved = [];
-      for (const p of this._parts) {
+      for (const p of this[_blobParts]) {
         if (p && p.__asyncBlob) {
-          const b = await p._promise;
+          const b = await p[_blobPlaceholderPromise];
           // b is a Blob
           const buff = await b.arrayBuffer();
           resolved.push(new Uint8Array(buff));
@@ -341,12 +352,12 @@
         }
       }
       // temporarily replace parts and call original
-      const old = this._parts;
-      this._parts = resolved;
+      const old = this[_blobParts];
+      this[_blobParts] = resolved;
       try {
         return await _originalBlobArrayBuffer.call(this);
       } finally {
-        this._parts = old;
+        this[_blobParts] = old;
       }
     }
 
@@ -370,6 +381,13 @@
     static HEADERS_RECEIVED = 2;
     static LOADING = 3;
     static DONE = 4;
+    #method = null;
+    #url = null;
+    #async = true;
+    #request = null;
+    #requestHeaders = {};
+    #response = null;
+    #aborted = false;
 
     constructor() {
       super();
@@ -385,13 +403,13 @@
       this.upload = new EventTarget();
       this.withCredentials = false;
 
-      this._method = null;
-      this._url = null;
-      this._async = true;
-      this._request = null;
-      this._requestHeaders = {};
-      this._response = null;
-      this._aborted = false;
+      this.#method = null;
+      this.#url = null;
+      this.#async = true;
+      this.#request = null;
+      this.#requestHeaders = {};
+      this.#response = null;
+      this.#aborted = false;
 
       this.onreadystatechange = null;
       this.onabort = null;
@@ -404,20 +422,20 @@
     }
 
     open(method, url, async = true, user = null, password = null) {
-      this._method = method.toUpperCase();
-      this._url = url;
-      this._async = async;
-      this._request = new __APPLE_SPEC__.URLRequest(url);
-      this._request.httpMethod = this._method;
-      this._setReadyState(XMLHttpRequest.OPENED);
+      this.#method = method.toUpperCase();
+      this.#url = url;
+      this.#async = async;
+      this.#request = new __APPLE_SPEC__.URLRequest(url);
+      this.#request.httpMethod = this.#method;
+      this.#setReadyState(XMLHttpRequest.OPENED);
     }
 
     setRequestHeader(name, value) {
       if (this.readyState !== XMLHttpRequest.OPENED) {
         throw new Error('InvalidStateError: The object is in an invalid state.');
       }
-      this._requestHeaders[name] = value;
-      this._request.setValueForHTTPHeaderField(value, name);
+      this.#requestHeaders[name] = value;
+      this.#request.setValueForHTTPHeaderField(value, name);
     }
 
     send(body = null) {
@@ -427,37 +445,37 @@
 
       if (body !== null) {
         if (body instanceof FormData) {
-          const multipart = body._toMultipartString();
-          this._request.httpBody = multipart.body;
-          if (!this._requestHeaders['Content-Type']) {
+          const multipart = body[_formDataToMultipart]();
+          this.#request.httpBody = multipart.body;
+          if (!this.#requestHeaders['Content-Type']) {
             this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
           }
         } else if (typeof body === 'string') {
-          this._request.httpBody = body;
-          if (!this._requestHeaders['Content-Type']) {
+          this.#request.httpBody = body;
+          if (!this.#requestHeaders['Content-Type']) {
             this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
           }
         } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-          this._request.httpBody = new Uint8Array(body);
-          if (!this._requestHeaders['Content-Type']) {
+          this.#request.httpBody = new Uint8Array(body);
+          if (!this.#requestHeaders['Content-Type']) {
             this.setRequestHeader('Content-Type', 'application/octet-stream');
           }
         }
       }
 
-      this._setReadyState(XMLHttpRequest.LOADING);
-      this._dispatchEvent('loadstart');
+      this.#setReadyState(XMLHttpRequest.LOADING);
+      this.#dispatchEvent('loadstart');
 
       const session = __APPLE_SPEC__.URLSession.getShared();
-      const promise = session.dataTaskWithRequestCompletionHandler(this._request, null);
+      const promise = session.dataTaskWithRequestCompletionHandler(this.#request, null);
 
       promise.then((result) => {
-        if (this._aborted) return;
+        if (this.#aborted) return;
 
-        this._response = result.response;
+        this.#response = result.response;
         this.status = result.response.statusCode;
-        this.statusText = this._getStatusText(this.status);
-        this.responseURL = result.response.url || this._url;
+        this.statusText = this.#getStatusText(this.status);
+        this.responseURL = result.response.url || this.#url;
 
         // Set response based on responseType
         const data = result.data;
@@ -481,39 +499,39 @@
           }
         }
 
-        this._setReadyState(XMLHttpRequest.DONE);
-        this._dispatchEvent('load');
-        this._dispatchEvent('loadend');
+        this.#setReadyState(XMLHttpRequest.DONE);
+        this.#dispatchEvent('load');
+        this.#dispatchEvent('loadend');
       }).catch((error) => {
-        if (this._aborted) return;
+        if (this.#aborted) return;
 
-        this._setReadyState(XMLHttpRequest.DONE);
-        this._dispatchEvent('error');
-        this._dispatchEvent('loadend');
+        this.#setReadyState(XMLHttpRequest.DONE);
+        this.#dispatchEvent('error');
+        this.#dispatchEvent('loadend');
       });
     }
 
     abort() {
-      this._aborted = true;
+      this.#aborted = true;
       if (this.readyState !== XMLHttpRequest.DONE) {
-        this._setReadyState(XMLHttpRequest.DONE);
-        this._dispatchEvent('abort');
-        this._dispatchEvent('loadend');
+        this.#setReadyState(XMLHttpRequest.DONE);
+        this.#dispatchEvent('abort');
+        this.#dispatchEvent('loadend');
       }
     }
 
     getResponseHeader(name) {
-      if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED || !this._response) {
+      if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED || !this.#response) {
         return null;
       }
-      return this._response.valueForHTTPHeaderField(name) || null;
+      return this.#response.valueForHTTPHeaderField(name) || null;
     }
 
     getAllResponseHeaders() {
-      if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED || !this._response) {
+      if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED || !this.#response) {
         return '';
       }
-      const headers = this._response.allHeaderFields;
+      const headers = this.#response.allHeaderFields;
       return Object.keys(headers).map(key => `${key}: ${headers[key]}`).join('\r\n') + '\r\n';
     }
 
@@ -521,12 +539,12 @@
       // Not implemented for now
     }
 
-    _setReadyState(state) {
+    #setReadyState(state) {
       this.readyState = state;
-      this._dispatchEvent('readystatechange');
+      this.#dispatchEvent('readystatechange');
     }
 
-    _dispatchEvent(type) {
+    #dispatchEvent(type) {
       const event = new Event(type);
       this.dispatchEvent(event);
 
@@ -536,7 +554,7 @@
       }
     }
 
-    _getStatusText(status) {
+    #getStatusText(status) {
       const statusTexts = {
         100: 'Continue', 101: 'Switching Protocols',
         200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content',
@@ -551,19 +569,19 @@
   // Headers implementation
   globalThis.Headers = class Headers {
     constructor(init) {
-      this._headers = new Map();
+      this[_headersMap] = new Map();
       if (init) {
         if (init instanceof Headers) {
-          for (const [key, value] of init._headers) {
-            this._headers.set(key.toLowerCase(), value);
+          for (const [key, value] of init[_headersMap]) {
+            this[_headersMap].set(key.toLowerCase(), value);
           }
         } else if (Array.isArray(init)) {
           for (const [key, value] of init) {
-            this._headers.set(key.toLowerCase(), String(value));
+            this[_headersMap].set(key.toLowerCase(), String(value));
           }
         } else if (typeof init === 'object') {
           for (const [key, value] of Object.entries(init)) {
-            this._headers.set(key.toLowerCase(), String(value));
+            this[_headersMap].set(key.toLowerCase(), String(value));
           }
         }
       }
@@ -571,50 +589,50 @@
 
     append(name, value) {
       const normalizedName = name.toLowerCase();
-      const existing = this._headers.get(normalizedName);
+      const existing = this[_headersMap].get(normalizedName);
       if (existing) {
-        this._headers.set(normalizedName, `${existing}, ${value}`);
+        this[_headersMap].set(normalizedName, `${existing}, ${value}`);
       } else {
-        this._headers.set(normalizedName, String(value));
+        this[_headersMap].set(normalizedName, String(value));
       }
     }
 
     delete(name) {
-      this._headers.delete(name.toLowerCase());
+      this[_headersMap].delete(name.toLowerCase());
     }
 
     entries() {
-      return this._headers.entries();
+      return this[_headersMap].entries();
     }
 
     forEach(callback, thisArg) {
-      for (const [key, value] of this._headers) {
+      for (const [key, value] of this[_headersMap]) {
         callback.call(thisArg, value, key, this);
       }
     }
 
     get(name) {
-      return this._headers.get(name.toLowerCase()) || null;
+      return this[_headersMap].get(name.toLowerCase()) || null;
     }
 
     has(name) {
-      return this._headers.has(name.toLowerCase());
+      return this[_headersMap].has(name.toLowerCase());
     }
 
     keys() {
-      return this._headers.keys();
+      return this[_headersMap].keys();
     }
 
     set(name, value) {
-      this._headers.set(name.toLowerCase(), String(value));
+      this[_headersMap].set(name.toLowerCase(), String(value));
     }
 
     values() {
-      return this._headers.values();
+      return this[_headersMap].values();
     }
 
     [Symbol.iterator]() {
-      return this._headers[Symbol.iterator]();
+      return this[_headersMap][Symbol.iterator]();
     }
   };
 
@@ -646,7 +664,7 @@
       }
 
       this.bodyUsed = false;
-      this._bodyText = null;
+      this[_requestBodyText] = null;
     }
 
     clone() {
@@ -665,7 +683,7 @@
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body._toMultipartString();
+        const multipart = this.body[_formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -696,7 +714,7 @@
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body._toMultipartString();
+        const multipart = this.body[_formDataToMultipart]();
         return multipart.body;
       }
 
@@ -757,7 +775,7 @@
         return this.body.buffer.slice(this.body.byteOffset, this.body.byteOffset + this.body.byteLength);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body._toMultipartString();
+        const multipart = this.body[_formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -788,7 +806,7 @@
         return new TextDecoder().decode(this.body);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body._toMultipartString();
+        const multipart = this.body[_formDataToMultipart]();
         return multipart.body;
       }
 
@@ -810,9 +828,10 @@
     }
 
     // Set body
+    // Set body
     if (request.body) {
       if (request.body instanceof FormData) {
-        const multipart = request.body._toMultipartString();
+        const multipart = request.body[_formDataToMultipart]();
         urlRequest.httpBody = multipart.body;
         urlRequest.setValueForHTTPHeaderField(`multipart/form-data; boundary=${multipart.boundary}`, 'Content-Type');
       } else if (typeof request.body === 'string') {
@@ -835,36 +854,36 @@
     return response;
   };
 
-  // FormData implementation
+  // FormData implementation (internals hidden via module-scoped Symbols)
   globalThis.FormData = class FormData {
     constructor(form) {
-      this._data = new Map();
+      this[_formDataData] = new Map();
     }
 
     append(name, value, filename) {
       const key = String(name);
 
-      if (!this._data.has(key)) {
-        this._data.set(key, []);
+      if (!this[_formDataData].has(key)) {
+        this[_formDataData].set(key, []);
       }
 
       if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'File') {
         // Handle File objects
-        this._data.get(key).push({
+        this[_formDataData].get(key).push({
           type: 'file',
           value: value,
           filename: filename || value.name || 'blob'
         });
       } else if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Blob') {
         // Handle Blob objects
-        this._data.get(key).push({
+        this[_formDataData].get(key).push({
           type: 'blob',
           value: value,
           filename: filename || 'blob'
         });
       } else {
         // Handle string values
-        this._data.get(key).push({
+        this[_formDataData].get(key).push({
           type: 'string',
           value: String(value),
           filename: null
@@ -873,12 +892,12 @@
     }
 
     delete(name) {
-      this._data.delete(String(name));
+      this[_formDataData].delete(String(name));
     }
 
     entries() {
       const entries = [];
-      for (const [key, values] of this._data) {
+      for (const [key, values] of this[_formDataData]) {
         for (const item of values) {
           if (item.type === 'file' || item.type === 'blob') {
             entries.push([key, item.value, item.filename]);
@@ -897,7 +916,7 @@
     }
 
     get(name) {
-      const values = this._data.get(String(name));
+      const values = this[_formDataData].get(String(name));
       if (!values || values.length === 0) {
         return null;
       }
@@ -905,7 +924,7 @@
     }
 
     getAll(name) {
-      const values = this._data.get(String(name));
+      const values = this[_formDataData].get(String(name));
       if (!values) {
         return [];
       }
@@ -913,12 +932,12 @@
     }
 
     has(name) {
-      return this._data.has(String(name));
+      return this[_formDataData].has(String(name));
     }
 
     keys() {
       const keys = [];
-      for (const [key, values] of this._data) {
+      for (const [key, values] of this[_formDataData]) {
         for (let i = 0; i < values.length; i++) {
           keys.push(key);
         }
@@ -928,13 +947,13 @@
 
     set(name, value, filename) {
       const key = String(name);
-      this._data.delete(key);
+      this[_formDataData].delete(key);
       this.append(key, value, filename);
     }
 
     values() {
       const values = [];
-      for (const [key, items] of this._data) {
+      for (const [key, items] of this[_formDataData]) {
         for (const item of items) {
           values.push(item.value);
         }
@@ -946,12 +965,31 @@
       return this.entries();
     }
 
-    // Convert FormData to multipart/form-data string
-    _toMultipartString() {
+    // (multipart helper implemented via symbol method below)
+
+    // Convert FormData to URL-encoded string
+    [_formDataToURLEncoded]() {
+      const params = [];
+      for (const [key, values] of this[_formDataData]) {
+        for (const item of values) {
+          if (item.type === 'string') {
+            params.push(encodeURIComponent(key) + '=' + encodeURIComponent(item.value));
+          } else {
+            // Files and blobs are typically not supported in URL-encoded format
+            params.push(encodeURIComponent(key) + '=' + encodeURIComponent('[Object]'));
+          }
+        }
+      }
+
+      return params.join('&');
+    }
+
+    // expose the multipart helper via symbol to keep module-local privacy
+    [_formDataToMultipart]() {
       const boundary = '----formdata-swiftjs-' + Math.random().toString(36).substr(2, 16);
       let result = '';
 
-      for (const [key, values] of this._data) {
+      for (const [key, values] of this[_formDataData]) {
         for (const item of values) {
           result += `--${boundary}\r\n`;
 
@@ -961,10 +999,7 @@
             result += `Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`;
             result += `Content-Type: ${contentType}\r\n\r\n`;
 
-            // For now, we'll convert blob/file to string representation
-            // In a real implementation, this would handle binary data properly
             if (item.value.arrayBuffer) {
-              // This is a simplified approach for demo purposes
               result += '[Binary Data]\r\n';
             } else {
               result += String(item.value) + '\r\n';
@@ -978,28 +1013,7 @@
 
       result += `--${boundary}--\r\n`;
 
-      return {
-        boundary: boundary,
-        body: result
-      };
-    }
-
-    // Convert FormData to URL-encoded string
-    _toURLEncoded() {
-      const params = [];
-
-      for (const [key, values] of this._data) {
-        for (const item of values) {
-          if (item.type === 'string') {
-            params.push(encodeURIComponent(key) + '=' + encodeURIComponent(item.value));
-          } else {
-            // Files and blobs are typically not supported in URL-encoded format
-            params.push(encodeURIComponent(key) + '=' + encodeURIComponent('[Object]'));
-          }
-        }
-      }
-
-      return params.join('&');
+      return { boundary, body: result };
     }
   };
 
