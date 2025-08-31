@@ -251,7 +251,7 @@
           this.size += part.byteLength;
         } else if (ArrayBuffer.isView(part)) {
           this.size += part.byteLength;
-        } else if (part && typeof part === 'object' && part.constructor && part.constructor.name === 'Blob') {
+        } else if (part instanceof Blob) {
           this.size += part.size || 0;
         } else if (part == null) {
           // ignore
@@ -269,10 +269,10 @@
     async arrayBuffer() {
       // Build the parts to process: if any part is an async placeholder, resolve them first.
       let partsToProcess = this[blobParts];
-      if (partsToProcess && partsToProcess.some(p => p && p.__asyncBlob)) {
+      if (partsToProcess?.some(p => p?.__asyncBlob)) {
         const resolved = [];
         for (const p of partsToProcess) {
-          if (p && p.__asyncBlob) {
+          if (p?.__asyncBlob) {
             const b = await p[blobPlaceholderPromise];
             // b is a Blob
             const buff = await b.arrayBuffer();
@@ -301,7 +301,7 @@
           const view = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
           chunks.push(view);
           total += view.byteLength;
-        } else if (part && typeof part === 'object' && part.constructor && part.constructor.name === 'Blob') {
+        } else if (part instanceof Blob) {
           const buff = await part.arrayBuffer();
           const u = new Uint8Array(buff);
           chunks.push(u);
