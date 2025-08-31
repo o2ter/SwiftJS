@@ -120,7 +120,7 @@
       const signal = this.signal;
       if (!signal.aborted) {
         // mark aborted using module-private symbol method
-        if (typeof signal[abortSignalMarkAborted] === 'function') signal[abortSignalMarkAborted]();
+        signal[abortSignalMarkAborted]();
         signal.dispatchEvent(new Event("abort"));
       }
     }
