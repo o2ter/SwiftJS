@@ -1,13 +1,13 @@
 ; (function () {
   // Module-scoped symbols for internal, non-public APIs
-  const _formDataData = Symbol('FormData._data');
-  const _formDataToMultipart = Symbol('FormData._toMultipartString');
-  const _formDataToURLEncoded = Symbol('FormData._toURLEncoded');
-  const _blobParts = Symbol('Blob._parts');
-  const _blobType = Symbol('Blob._type');
-  const _blobPlaceholderPromise = Symbol('Blob._placeholderPromise');
-  const _headersMap = Symbol('Headers._headers');
-  const _requestBodyText = Symbol('Request._bodyText');
+  const formDataData = Symbol('FormData._data');
+  const formDataToMultipart = Symbol('FormData._toMultipartString');
+  const formDataToURLEncoded = Symbol('FormData._toURLEncoded');
+  const blobParts = Symbol('Blob._parts');
+  const blobType = Symbol('Blob._type');
+  const blobPlaceholderPromise = Symbol('Blob._placeholderPromise');
+  const headersMap = Symbol('Headers._headers');
+  const requestBodyText = Symbol('Request._bodyText');
 
   globalThis.process = new class Process {
 
@@ -231,11 +231,11 @@
   // Supports parts made of: string, ArrayBuffer, TypedArray, Blob
   globalThis.Blob = class Blob {
     constructor(parts = [], options = {}) {
-      this[_blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
+      this[blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
       this.type = (options && options.type) ? String(options.type).toLowerCase() : '';
       this.size = 0;
       const encoder = new TextEncoder();
-      for (const part of this[_blobParts]) {
+      for (const part of this[blobParts]) {
         if (typeof part === 'string') {
           this.size += encoder.encode(part).length;
         } else if (part instanceof ArrayBuffer) {
@@ -253,7 +253,7 @@
         }
       }
       // Common web API fields
-      this[_blobType] = this.type;
+      this[blobType] = this.type;
       this[Symbol.toStringTag] = 'Blob';
     }
 
@@ -262,7 +262,7 @@
       const chunks = [];
       let total = 0;
 
-      for (const part of this[_blobParts]) {
+      for (const part of this[blobParts]) {
         if (typeof part === 'string') {
           const u = encoder.encode(part);
           chunks.push(u);
@@ -326,9 +326,9 @@
       // The returned Blob should behave synchronously for size/type but arrayBuffer() will work.
       const placeholder = new Blob([], { type: contentType });
       // store the async part so placeholder.arrayBuffer() will use it
-      placeholder[_blobParts] = [{
+      placeholder[blobParts] = [{
         __asyncBlob: true,
-        [_blobPlaceholderPromise]: sliced
+        [blobPlaceholderPromise]: sliced
       }];
       placeholder.size = span;
       return placeholder;
@@ -339,11 +339,11 @@
   const _originalBlobArrayBuffer = globalThis.Blob.prototype.arrayBuffer;
   globalThis.Blob.prototype.arrayBuffer = async function () {
     // If parts include async placeholders, await them
-    if (this[_blobParts] && this[_blobParts].some(p => p && p.__asyncBlob)) {
+    if (this[blobParts] && this[blobParts].some(p => p && p.__asyncBlob)) {
       const resolved = [];
-      for (const p of this[_blobParts]) {
+      for (const p of this[blobParts]) {
         if (p && p.__asyncBlob) {
-          const b = await p[_blobPlaceholderPromise];
+          const b = await p[blobPlaceholderPromise];
           // b is a Blob
           const buff = await b.arrayBuffer();
           resolved.push(new Uint8Array(buff));
@@ -352,12 +352,12 @@
         }
       }
       // temporarily replace parts and call original
-      const old = this[_blobParts];
-      this[_blobParts] = resolved;
+      const old = this[blobParts];
+      this[blobParts] = resolved;
       try {
         return await _originalBlobArrayBuffer.call(this);
       } finally {
-        this[_blobParts] = old;
+        this[blobParts] = old;
       }
     }
 
@@ -445,7 +445,7 @@
 
       if (body !== null) {
         if (body instanceof FormData) {
-          const multipart = body[_formDataToMultipart]();
+          const multipart = body[formDataToMultipart]();
           this.#request.httpBody = multipart.body;
           if (!this.#requestHeaders['Content-Type']) {
             this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
@@ -569,19 +569,19 @@
   // Headers implementation
   globalThis.Headers = class Headers {
     constructor(init) {
-      this[_headersMap] = new Map();
+      this[headersMap] = new Map();
       if (init) {
         if (init instanceof Headers) {
-          for (const [key, value] of init[_headersMap]) {
-            this[_headersMap].set(key.toLowerCase(), value);
+          for (const [key, value] of init[headersMap]) {
+            this[headersMap].set(key.toLowerCase(), value);
           }
         } else if (Array.isArray(init)) {
           for (const [key, value] of init) {
-            this[_headersMap].set(key.toLowerCase(), String(value));
+            this[headersMap].set(key.toLowerCase(), String(value));
           }
         } else if (typeof init === 'object') {
           for (const [key, value] of Object.entries(init)) {
-            this[_headersMap].set(key.toLowerCase(), String(value));
+            this[headersMap].set(key.toLowerCase(), String(value));
           }
         }
       }
@@ -589,50 +589,50 @@
 
     append(name, value) {
       const normalizedName = name.toLowerCase();
-      const existing = this[_headersMap].get(normalizedName);
+      const existing = this[headersMap].get(normalizedName);
       if (existing) {
-        this[_headersMap].set(normalizedName, `${existing}, ${value}`);
+        this[headersMap].set(normalizedName, `${existing}, ${value}`);
       } else {
-        this[_headersMap].set(normalizedName, String(value));
+        this[headersMap].set(normalizedName, String(value));
       }
     }
 
     delete(name) {
-      this[_headersMap].delete(name.toLowerCase());
+      this[headersMap].delete(name.toLowerCase());
     }
 
     entries() {
-      return this[_headersMap].entries();
+      return this[headersMap].entries();
     }
 
     forEach(callback, thisArg) {
-      for (const [key, value] of this[_headersMap]) {
+      for (const [key, value] of this[headersMap]) {
         callback.call(thisArg, value, key, this);
       }
     }
 
     get(name) {
-      return this[_headersMap].get(name.toLowerCase()) || null;
+      return this[headersMap].get(name.toLowerCase()) || null;
     }
 
     has(name) {
-      return this[_headersMap].has(name.toLowerCase());
+      return this[headersMap].has(name.toLowerCase());
     }
 
     keys() {
-      return this[_headersMap].keys();
+      return this[headersMap].keys();
     }
 
     set(name, value) {
-      this[_headersMap].set(name.toLowerCase(), String(value));
+      this[headersMap].set(name.toLowerCase(), String(value));
     }
 
     values() {
-      return this[_headersMap].values();
+      return this[headersMap].values();
     }
 
     [Symbol.iterator]() {
-      return this[_headersMap][Symbol.iterator]();
+      return this[headersMap][Symbol.iterator]();
     }
   };
 
@@ -664,7 +664,7 @@
       }
 
       this.bodyUsed = false;
-      this[_requestBodyText] = null;
+      this[requestBodyText] = null;
     }
 
     clone() {
@@ -683,7 +683,7 @@
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body[_formDataToMultipart]();
+        const multipart = this.body[formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -714,7 +714,7 @@
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body[_formDataToMultipart]();
+        const multipart = this.body[formDataToMultipart]();
         return multipart.body;
       }
 
@@ -775,7 +775,7 @@
         return this.body.buffer.slice(this.body.byteOffset, this.body.byteOffset + this.body.byteLength);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[_formDataToMultipart]();
+        const multipart = this.body[formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -806,7 +806,7 @@
         return new TextDecoder().decode(this.body);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[_formDataToMultipart]();
+        const multipart = this.body[formDataToMultipart]();
         return multipart.body;
       }
 
@@ -831,7 +831,7 @@
     // Set body
     if (request.body) {
       if (request.body instanceof FormData) {
-        const multipart = request.body[_formDataToMultipart]();
+        const multipart = request.body[formDataToMultipart]();
         urlRequest.httpBody = multipart.body;
         urlRequest.setValueForHTTPHeaderField(`multipart/form-data; boundary=${multipart.boundary}`, 'Content-Type');
       } else if (typeof request.body === 'string') {
@@ -857,33 +857,33 @@
   // FormData implementation (internals hidden via module-scoped Symbols)
   globalThis.FormData = class FormData {
     constructor(form) {
-      this[_formDataData] = new Map();
+      this[formDataData] = new Map();
     }
 
     append(name, value, filename) {
       const key = String(name);
 
-      if (!this[_formDataData].has(key)) {
-        this[_formDataData].set(key, []);
+      if (!this[formDataData].has(key)) {
+        this[formDataData].set(key, []);
       }
 
       if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'File') {
         // Handle File objects
-        this[_formDataData].get(key).push({
+        this[formDataData].get(key).push({
           type: 'file',
           value: value,
           filename: filename || value.name || 'blob'
         });
       } else if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Blob') {
         // Handle Blob objects
-        this[_formDataData].get(key).push({
+        this[formDataData].get(key).push({
           type: 'blob',
           value: value,
           filename: filename || 'blob'
         });
       } else {
         // Handle string values
-        this[_formDataData].get(key).push({
+        this[formDataData].get(key).push({
           type: 'string',
           value: String(value),
           filename: null
@@ -892,12 +892,12 @@
     }
 
     delete(name) {
-      this[_formDataData].delete(String(name));
+      this[formDataData].delete(String(name));
     }
 
     entries() {
       const entries = [];
-      for (const [key, values] of this[_formDataData]) {
+      for (const [key, values] of this[formDataData]) {
         for (const item of values) {
           if (item.type === 'file' || item.type === 'blob') {
             entries.push([key, item.value, item.filename]);
@@ -916,7 +916,7 @@
     }
 
     get(name) {
-      const values = this[_formDataData].get(String(name));
+      const values = this[formDataData].get(String(name));
       if (!values || values.length === 0) {
         return null;
       }
@@ -924,7 +924,7 @@
     }
 
     getAll(name) {
-      const values = this[_formDataData].get(String(name));
+      const values = this[formDataData].get(String(name));
       if (!values) {
         return [];
       }
@@ -932,12 +932,12 @@
     }
 
     has(name) {
-      return this[_formDataData].has(String(name));
+      return this[formDataData].has(String(name));
     }
 
     keys() {
       const keys = [];
-      for (const [key, values] of this[_formDataData]) {
+      for (const [key, values] of this[formDataData]) {
         for (let i = 0; i < values.length; i++) {
           keys.push(key);
         }
@@ -947,13 +947,13 @@
 
     set(name, value, filename) {
       const key = String(name);
-      this[_formDataData].delete(key);
+      this[formDataData].delete(key);
       this.append(key, value, filename);
     }
 
     values() {
       const values = [];
-      for (const [key, items] of this[_formDataData]) {
+      for (const [key, items] of this[formDataData]) {
         for (const item of items) {
           values.push(item.value);
         }
@@ -968,9 +968,9 @@
     // (multipart helper implemented via symbol method below)
 
     // Convert FormData to URL-encoded string
-    [_formDataToURLEncoded]() {
+    [formDataToURLEncoded]() {
       const params = [];
-      for (const [key, values] of this[_formDataData]) {
+      for (const [key, values] of this[formDataData]) {
         for (const item of values) {
           if (item.type === 'string') {
             params.push(encodeURIComponent(key) + '=' + encodeURIComponent(item.value));
@@ -985,11 +985,11 @@
     }
 
     // expose the multipart helper via symbol to keep module-local privacy
-    [_formDataToMultipart]() {
+    [formDataToMultipart]() {
       const boundary = '----formdata-swiftjs-' + Math.random().toString(36).substr(2, 16);
       let result = '';
 
-      for (const [key, values] of this[_formDataData]) {
+      for (const [key, values] of this[formDataData]) {
         for (const item of values) {
           result += `--${boundary}\r\n`;
 
