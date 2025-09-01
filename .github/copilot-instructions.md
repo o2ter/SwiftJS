@@ -123,7 +123,8 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Both library and test targets have separate resource bundles
 
 ## Temporary Code for Testing
-When creating temporary coed to test code, place all test scripts under `Sources/SwiftJSDemo` to keep the workspace organized and avoid conflicts with the main codebase.
+- When creating temporary coed to test code, place all test scripts under `Sources/SwiftJSDemo` to keep the workspace organized and avoid conflicts with the main codebase.
+- please read the structure of the project before modifying the `Sources/SwiftJSDemo`.
 
 ### AI Agent Test Execution Guidelines
 When running tests as an AI agent:
@@ -134,3 +135,4 @@ When running tests as an AI agent:
 - Never repeat or re-run the test command while a test task is already running
 - Only proceed with next steps after test completion confirmation
 - Never assume a task has completed successfully without confirmation
+- Never use timeouts to guess task completion
