@@ -50,9 +50,11 @@ import JavaScriptCore
         guard let url = URL(string: url) else {
             self.request = URLRequest(url: URL(string: "about:blank")!)
             super.init()
+            self.request.httpMethod = "GET" // Set default method
             return
         }
         self.request = URLRequest(url: url)
+        self.request.httpMethod = "GET" // Set default method
         super.init()
     }
     
@@ -60,10 +62,12 @@ import JavaScriptCore
         guard let url = URL(string: url) else {
             self.request = URLRequest(url: URL(string: "about:blank")!)
             super.init()
+            self.request.httpMethod = "GET" // Set default method
             return
         }
         let policy = URLRequest.CachePolicy(rawValue: UInt(cachePolicy)) ?? .useProtocolCachePolicy
         self.request = URLRequest(url: url, cachePolicy: policy, timeoutInterval: timeoutInterval)
+        self.request.httpMethod = "GET" // Set default method
         super.init()
     }
     
@@ -76,7 +80,7 @@ import JavaScriptCore
     }
     
     @objc var httpMethod: String? {
-        get { return request.httpMethod }
+        get { return request.httpMethod ?? "GET" }
         set { request.httpMethod = newValue }
     }
     

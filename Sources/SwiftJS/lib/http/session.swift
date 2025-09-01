@@ -53,47 +53,44 @@ import JavaScriptCore
 
         return JSValue(newPromiseIn: context) { resolve, reject in
             let task = self.session.dataTask(with: request.urlRequest) { data, response, error in
-                // Dispatch back to main thread for JavaScriptCore operations
-                DispatchQueue.main.async {
-                    if let error = error {
-                        reject?.call(withArguments: [
-                            JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
-                        ])
-                        return
-                    }
-
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                        reject?.call(withArguments: [
-                            JSValue(newErrorFromMessage: "Invalid response", in: context)!
-                        ])
-                        return
-                    }
-
-                    let jsResponse = JSURLResponse(response: httpResponse)
-                    let dataValue: JSValue
-
-                    if let data = data {
-                        dataValue = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                            data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
-                        }
-                    } else {
-                        dataValue = JSValue.uint8Array(count: 0, in: context)
-                    }
-
-                    let result = JSValue(
-                        object: [
-                            "data": dataValue,
-                            "response": JSValue(object: jsResponse, in: context)!,
-                        ], in: context)!
-
-                    if let handler = completionHandler {
-                        let nullValue = JSValue(nullIn: context)!
-                        let responseValue = JSValue(object: jsResponse, in: context)!
-                        handler.call(withArguments: [nullValue, dataValue, responseValue])
-                    }
-
-                    resolve?.call(withArguments: [result])
+                if let error = error {
+                    reject?.call(withArguments: [
+                        JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
+                    ])
+                    return
                 }
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    reject?.call(withArguments: [
+                        JSValue(newErrorFromMessage: "Invalid response", in: context)!
+                    ])
+                    return
+                }
+
+                let jsResponse = JSURLResponse(response: httpResponse)
+                let dataValue: JSValue
+
+                if let data = data {
+                    dataValue = JSValue.uint8Array(count: data.count, in: context) { buffer in
+                        data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+                    }
+                } else {
+                    dataValue = JSValue.uint8Array(count: 0, in: context)
+                }
+
+                let result = JSValue(
+                    object: [
+                        "data": dataValue,
+                        "response": JSValue(object: jsResponse, in: context)!,
+                    ], in: context)!
+
+                if let handler = completionHandler {
+                    let nullValue = JSValue(nullIn: context)!
+                    let responseValue = JSValue(object: jsResponse, in: context)!
+                    handler.call(withArguments: [nullValue, dataValue, responseValue])
+                }
+
+                resolve?.call(withArguments: [result])
             }
             task.resume()
         }
