@@ -27,26 +27,26 @@ import Foundation
 import JavaScriptCore
 
 @objc protocol JSURLRequestExport: JSExport {
-    init(url: String)
-    static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest
+    @objc init(url: String)
+    @objc static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest
     
-    var url: String? { get }
-    var httpMethod: String? { get set }
-    var allHTTPHeaderFields: [String: String]? { get set }
-    var httpBody: JSValue? { get set }
-    var timeoutInterval: Double { get set }
-    var cachePolicy: Int { get set }
+    @objc var url: String? { get }
+    @objc var httpMethod: String? { get set }
+    @objc var allHTTPHeaderFields: [String: String]? { get set }
+    @objc var httpBody: JSValue? { get set }
+    @objc var timeoutInterval: Double { get set }
+    @objc var cachePolicy: Int { get set }
     
-    func setValueForHTTPHeaderField(_ value: String?, _ field: String)
-    func addValueForHTTPHeaderField(_ value: String, _ field: String)
-    func valueForHTTPHeaderField(_ field: String) -> String?
+    @objc func setValueForHTTPHeaderField(_ value: String?, _ field: String)
+    @objc func addValueForHTTPHeaderField(_ value: String, _ field: String)
+    @objc func valueForHTTPHeaderField(_ field: String) -> String?
 }
 
 @objc final class JSURLRequest: NSObject, JSURLRequestExport {
     
     private var request: URLRequest
     
-    init(url: String) {
+    @objc init(url: String) {
         guard let url = URL(string: url) else {
             self.request = URLRequest(url: URL(string: "about:blank")!)
             super.init()
@@ -71,21 +71,21 @@ import JavaScriptCore
         return JSURLRequest(url: url, cachePolicy: cachePolicy, timeoutInterval: timeoutInterval)
     }
     
-    var url: String? {
+    @objc var url: String? {
         return request.url?.absoluteString
     }
     
-    var httpMethod: String? {
+    @objc var httpMethod: String? {
         get { return request.httpMethod }
         set { request.httpMethod = newValue }
     }
     
-    var allHTTPHeaderFields: [String: String]? {
+    @objc var allHTTPHeaderFields: [String: String]? {
         get { return request.allHTTPHeaderFields }
         set { request.allHTTPHeaderFields = newValue }
     }
     
-    var httpBody: JSValue? {
+    @objc var httpBody: JSValue? {
         get {
             guard let data = request.httpBody,
                   let context = JSContext.current() else { return nil }
@@ -105,12 +105,12 @@ import JavaScriptCore
         }
     }
     
-    var timeoutInterval: Double {
+    @objc var timeoutInterval: Double {
         get { return request.timeoutInterval }
         set { request.timeoutInterval = newValue }
     }
     
-    var cachePolicy: Int {
+    @objc var cachePolicy: Int {
         get { return Int(request.cachePolicy.rawValue) }
         set { 
             if let policy = URLRequest.CachePolicy(rawValue: UInt(newValue)) {
@@ -119,15 +119,15 @@ import JavaScriptCore
         }
     }
     
-    func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
+    @objc func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
         request.setValue(value, forHTTPHeaderField: field)
     }
     
-    func addValueForHTTPHeaderField(_ value: String, _ field: String) {
+    @objc func addValueForHTTPHeaderField(_ value: String, _ field: String) {
         request.addValue(value, forHTTPHeaderField: field)
     }
     
-    func valueForHTTPHeaderField(_ field: String) -> String? {
+    @objc func valueForHTTPHeaderField(_ field: String) -> String? {
         return request.value(forHTTPHeaderField: field)
     }
     
@@ -137,14 +137,14 @@ import JavaScriptCore
 }
 
 @objc protocol JSURLResponseExport: JSExport {
-    var url: String? { get }
-    var statusCode: Int { get }
-    var allHeaderFields: [String: String] { get }
-    var textEncodingName: String? { get }
-    var expectedContentLength: Int64 { get }
-    var mimeType: String? { get }
+    @objc var url: String? { get }
+    @objc var statusCode: Int { get }
+    @objc var allHeaderFields: [String: String] { get }
+    @objc var textEncodingName: String? { get }
+    @objc var expectedContentLength: Int64 { get }
+    @objc var mimeType: String? { get }
     
-    func value(forHTTPHeaderField field: String) -> String?
+    @objc func value(forHTTPHeaderField field: String) -> String?
 }
 
 @objc final class JSURLResponse: NSObject, JSURLResponseExport {
@@ -156,15 +156,15 @@ import JavaScriptCore
         super.init()
     }
     
-    var url: String? {
+    @objc var url: String? {
         return response.url?.absoluteString
     }
     
-    var statusCode: Int {
+    @objc var statusCode: Int {
         return response.statusCode
     }
     
-    var allHeaderFields: [String: String] {
+    @objc var allHeaderFields: [String: String] {
         return response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
             if let key = pair.key as? String, let value = pair.value as? String {
                 result[key] = value
@@ -172,19 +172,19 @@ import JavaScriptCore
         }
     }
     
-    var textEncodingName: String? {
+    @objc var textEncodingName: String? {
         return response.textEncodingName
     }
     
-    var expectedContentLength: Int64 {
+    @objc var expectedContentLength: Int64 {
         return response.expectedContentLength
     }
     
-    var mimeType: String? {
+    @objc var mimeType: String? {
         return response.mimeType
     }
     
-    func value(forHTTPHeaderField field: String) -> String? {
+    @objc func value(forHTTPHeaderField field: String) -> String? {
         return response.value(forHTTPHeaderField: field)
     }
 }
