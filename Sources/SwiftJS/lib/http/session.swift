@@ -27,8 +27,7 @@ import JavaScriptCore
 
 @objc protocol JSURLSessionExport: JSExport {
     static func getShared() -> JSURLSession
-    init(configuration: JSURLSessionConfiguration)
-    var configuration: JSURLSessionConfiguration { get }
+    init()
     
     func dataTaskWithRequestCompletionHandler(
         _ request: JSURLRequest, _ completionHandler: JSValue?
@@ -38,25 +37,13 @@ import JavaScriptCore
 
 @objc final class JSURLSession: NSObject, JSURLSessionExport {
     
+    let session: URLSession = URLSession(configuration: .ephemeral)
+
     nonisolated(unsafe) 
-        private static let _shared: JSURLSession = JSURLSession(session: .shared)
+        private static let _shared: JSURLSession = JSURLSession()
 
     @objc static func getShared() -> JSURLSession {
         return _shared
-    }
-    
-    let session: URLSession
-    
-    init(session: URLSession) {
-        self.session = session
-    }
-    
-    init(configuration: JSURLSessionConfiguration) {
-        self.session = URLSession(configuration: configuration.configuration)
-    }
-
-    var configuration: JSURLSessionConfiguration {
-        return JSURLSessionConfiguration(configuration: self.session.configuration)
     }
     
     func dataTaskWithRequestCompletionHandler(

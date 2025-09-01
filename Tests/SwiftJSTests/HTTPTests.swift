@@ -69,12 +69,6 @@ final class HTTPTests: XCTestCase {
         XCTAssertTrue(session1 === session2)  // Should be the same instance
     }
     
-    func testJSURLSessionWithConfiguration() {
-        let config = JSURLSessionConfiguration.default
-        let session = JSURLSession(configuration: config)
-        XCTAssertNotNil(session.configuration)
-    }
-    
     // MARK: - Network Request Tests
     
     func testSimpleGETRequest() {
