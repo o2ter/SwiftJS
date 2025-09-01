@@ -122,8 +122,8 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Swift resources use `.copy()` to preserve exact content
 - Both library and test targets have separate resource bundles
 
-## Temporary Files for Testing
-When creating temporary files to test code, place all test scripts under `<project_root>/.temp/` to keep the workspace organized and avoid conflicts with the main codebase.
+## Temporary Code for Testing
+When creating temporary coed to test code, place all test scripts under `SwiftJSDemo` to keep the workspace organized and avoid conflicts with the main codebase.
 
 ### AI Agent Test Execution Guidelines
 When running tests as an AI agent:
