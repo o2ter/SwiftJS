@@ -122,10 +122,11 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Swift resources use `.copy()` to preserve exact content
 - Both library and test targets have separate resource bundles
 
-## Temporary Code for Testing
-- When creating temporary code to test code, place all test scripts under `Sources/SwiftJSDemo` to keep the workspace organized and avoid conflicts with the main codebase.
-- This is a Swift project. please read the structure of `Sources/SwiftJSDemo/main.swift` before writing test.
-- Swift only runs scripts from `main.swift` - all test code must be placed in or called from the main.swift file in the SwiftJSDemo target.
+## Temporary Files for Testing
+- When creating temporary files to test code, place all test scripts under `<project_root>/.temp/` to keep the workspace organized and avoid conflicts with the main codebase.
+- Use SwiftJSRunner to execute JavaScript test files: `swift run SwiftJSRunner <script.js>`
+- SwiftJSRunner supports both file execution and eval mode: `swift run SwiftJSRunner -e "console.log('test')"`
+- All SwiftJS APIs are available in SwiftJSRunner including crypto, fetch, file system, and timers
 
 ## AI Agent Test Execution Guidelines
 When running tests as an AI agent:

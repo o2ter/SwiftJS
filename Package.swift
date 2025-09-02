@@ -34,7 +34,7 @@ let package = Package(
         .iOS(.v17),
     ],
     products: [
-        .executable(name: "SwiftJSDemo", targets: ["SwiftJSDemo"]),
+        .executable(name: "SwiftJSRunner", targets: ["SwiftJSRunner"]),
         .library(name: "SwiftJS", targets: ["SwiftJS"])
     ],
     dependencies: [
@@ -55,11 +55,8 @@ let package = Package(
             dependencies: ["SwiftJS"]
         ),
         .executableTarget(
-            name: "SwiftJSDemo",
-            dependencies: ["SwiftJS"],
-            resources: [
-                .copy("resources")
-            ]
-        ),
+            name: "SwiftJSRunner",
+            dependencies: ["SwiftJS"]
+        )
     ]
 )
