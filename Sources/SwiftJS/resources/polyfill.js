@@ -239,31 +239,46 @@
   // Minimal Blob / File implementation
   // Supports parts made of: string, ArrayBuffer, TypedArray, Blob
   globalThis.Blob = class Blob {
+    #size = 0;
+    #type = '';
+
     constructor(parts = [], options = {}) {
       this[blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
-      this.type = (options && options.type) ? String(options.type).toLowerCase() : '';
-      this.size = 0;
+      this.#type = (options && options.type) ? String(options.type).toLowerCase() : '';
       const encoder = new TextEncoder();
       for (const part of this[blobParts]) {
         if (typeof part === 'string') {
-          this.size += encoder.encode(part).length;
+          this.#size += encoder.encode(part).length;
         } else if (part instanceof ArrayBuffer) {
-          this.size += part.byteLength;
+          this.#size += part.byteLength;
         } else if (ArrayBuffer.isView(part)) {
-          this.size += part.byteLength;
+          this.#size += part.byteLength;
         } else if (part instanceof Blob) {
-          this.size += part.size || 0;
+          this.#size += part.size || 0;
         } else if (part == null) {
           // ignore
         } else {
           // fallback to string conversion
           const s = String(part);
-          this.size += encoder.encode(s).length;
+          this.#size += encoder.encode(s).length;
         }
       }
       // Common web API fields
-      this[blobType] = this.type;
+      this[blobType] = this.#type;
       this[Symbol.toStringTag] = 'Blob';
+    }
+
+    get size() {
+      return this.#size;
+    }
+
+    get type() {
+      return this.#type;
+    }
+
+    // Internal method to set size (used by slice method)
+    #setSize(size) {
+      this.#size = size;
     }
 
     async arrayBuffer() {
@@ -356,18 +371,29 @@
         __asyncBlob: true,
         [blobPlaceholderPromise]: sliced
       }];
-      placeholder.size = span;
+      placeholder.#setSize(span);
       return placeholder;
     }
   };
 
   // File extends Blob
   globalThis.File = class File extends Blob {
+    #name;
+    #lastModified;
+
     constructor(parts, name, options = {}) {
       super(parts, options);
-      this.name = String(name || '');
-      this.lastModified = options.lastModified || Date.now();
+      this.#name = String(name || '');
+      this.#lastModified = options.lastModified || Date.now();
       this[Symbol.toStringTag] = 'File';
+    }
+
+    get name() {
+      return this.#name;
+    }
+
+    get lastModified() {
+      return this.#lastModified;
     }
   };
 
@@ -385,19 +411,19 @@
     #requestHeaders = {};
     #response = null;
     #aborted = false;
+    #status = 0;
+    #statusText = '';
+    #responseURL = '';
+    #readyState = XMLHttpRequest.UNSENT;
+    #responseData = null;
+    #responseText = '';
+    #responseXML = null;
+    #upload = new EventTarget();
 
     constructor() {
       super();
-      this.readyState = XMLHttpRequest.UNSENT;
-      this.status = 0;
-      this.statusText = '';
-      this.response = null;
-      this.responseText = '';
       this.responseType = '';
-      this.responseURL = '';
-      this.responseXML = null;
       this.timeout = 0;
-      this.upload = new EventTarget();
       this.withCredentials = false;
 
       this.#method = null;
@@ -416,6 +442,38 @@
       this.onloadstart = null;
       this.onprogress = null;
       this.ontimeout = null;
+    }
+
+    get status() {
+      return this.#status;
+    }
+
+    get statusText() {
+      return this.#statusText;
+    }
+
+    get responseURL() {
+      return this.#responseURL;
+    }
+
+    get readyState() {
+      return this.#readyState;
+    }
+
+    get response() {
+      return this.#responseData;
+    }
+
+    get responseText() {
+      return this.#responseText;
+    }
+
+    get responseXML() {
+      return this.#responseXML;
+    }
+
+    get upload() {
+      return this.#upload;
     }
 
     open(method, url, async = true, user = null, password = null) {
@@ -470,29 +528,29 @@
         if (this.#aborted) return;
 
         this.#response = result.response;
-        this.status = result.response.statusCode;
-        this.statusText = this.#getStatusText(this.status);
-        this.responseURL = result.response.url || this.#url;
+        this.#status = result.response.statusCode;
+        this.#statusText = this.#getStatusText(this.#status);
+        this.#responseURL = result.response.url || this.#url;
 
         // Set response based on responseType
         const data = result.data;
         if (this.responseType === '' || this.responseType === 'text') {
-          this.responseText = new TextDecoder().decode(data);
-          this.response = this.responseText;
+          this.#responseText = new TextDecoder().decode(data);
+          this.#responseData = this.#responseText;
         } else if (this.responseType === 'arraybuffer') {
-          this.response = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-          this.responseText = '';
+          this.#responseData = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+          this.#responseText = '';
         } else if (this.responseType === 'blob') {
-          this.response = new Blob([data]);
-          this.responseText = '';
+          this.#responseData = new Blob([data]);
+          this.#responseText = '';
         } else if (this.responseType === 'json') {
           try {
             const text = new TextDecoder().decode(data);
-            this.response = JSON.parse(text);
-            this.responseText = '';
+            this.#responseData = JSON.parse(text);
+            this.#responseText = '';
           } catch (e) {
-            this.response = null;
-            this.responseText = '';
+            this.#responseData = null;
+            this.#responseText = '';
           }
         }
 
@@ -537,7 +595,7 @@
     }
 
     #setReadyState(state) {
-      this.readyState = state;
+      this.#readyState = state;
       this.#dispatchEvent('readystatechange');
     }
 
@@ -635,33 +693,93 @@
 
   // Request implementation  
   globalThis.Request = class Request {
+    #url;
+    #method;
+    #headers;
+    #body;
+    #mode;
+    #credentials;
+    #cache;
+    #redirect;
+    #referrer;
+    #integrity;
+    #bodyUsed;
+
     constructor(input, init = {}) {
       if (input instanceof Request) {
-        this.url = input.url;
-        this.method = input.method;
-        this.headers = new Headers(input.headers);
-        this.body = input.body;
-        this.mode = input.mode;
-        this.credentials = input.credentials;
-        this.cache = input.cache;
-        this.redirect = input.redirect;
-        this.referrer = input.referrer;
-        this.integrity = input.integrity;
+        this.#url = input.url;
+        this.#method = input.method;
+        this.#headers = new Headers(input.headers);
+        this.#body = input.body;
+        this.#mode = input.mode;
+        this.#credentials = input.credentials;
+        this.#cache = input.cache;
+        this.#redirect = input.redirect;
+        this.#referrer = input.referrer;
+        this.#integrity = input.integrity;
       } else {
-        this.url = String(input);
-        this.method = (init.method || 'GET').toUpperCase();
-        this.headers = new Headers(init.headers);
-        this.body = init.body || null;
-        this.mode = init.mode || 'cors';
-        this.credentials = init.credentials || 'same-origin';
-        this.cache = init.cache || 'default';
-        this.redirect = init.redirect || 'follow';
-        this.referrer = init.referrer || 'about:client';
-        this.integrity = init.integrity || '';
+        this.#url = String(input);
+        this.#method = (init.method || 'GET').toUpperCase();
+        this.#headers = new Headers(init.headers);
+        this.#body = init.body || null;
+        this.#mode = init.mode || 'cors';
+        this.#credentials = init.credentials || 'same-origin';
+        this.#cache = init.cache || 'default';
+        this.#redirect = init.redirect || 'follow';
+        this.#referrer = init.referrer || 'about:client';
+        this.#integrity = init.integrity || '';
       }
 
-      this.bodyUsed = false;
+      this.#bodyUsed = false;
       this[requestBodyText] = null;
+    }
+
+    get url() {
+      return this.#url;
+    }
+
+    get method() {
+      return this.#method;
+    }
+
+    get headers() {
+      return this.#headers;
+    }
+
+    get body() {
+      return this.#body;
+    }
+
+    get mode() {
+      return this.#mode;
+    }
+
+    get credentials() {
+      return this.#credentials;
+    }
+
+    get cache() {
+      return this.#cache;
+    }
+
+    get redirect() {
+      return this.#redirect;
+    }
+
+    get referrer() {
+      return this.#referrer;
+    }
+
+    get integrity() {
+      return this.#integrity;
+    }
+
+    get bodyUsed() {
+      return this.#bodyUsed;
+    }
+
+    #setBodyUsed() {
+      this.#bodyUsed = true;
     }
 
     clone() {
@@ -675,7 +793,7 @@
       if (this.bodyUsed) {
         throw new TypeError('Body has already been read');
       }
-      this.bodyUsed = true;
+      this.#setBodyUsed();
 
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
@@ -706,7 +824,7 @@
       if (this.bodyUsed) {
         throw new TypeError('Body has already been read');
       }
-      this.bodyUsed = true;
+      this.#setBodyUsed();
 
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
@@ -722,27 +840,83 @@
 
   // Response implementation
   globalThis.Response = class Response {
+    #body;
+    #status;
+    #statusText;
+    #headers;
+    #url;
+    #redirected;
+    #type;
+    #ok;
+    #bodyUsed;
+
     constructor(body, init = {}) {
-      this.body = body || null;
-      this.status = init.status || 200;
-      this.statusText = init.statusText || '';
-      this.headers = new Headers(init.headers);
-      this.url = init.url || '';
-      this.redirected = init.redirected || false;
-      this.type = init.type || 'default';
-      this.ok = this.status >= 200 && this.status < 300;
-      this.bodyUsed = false;
+      this.#body = body || null;
+      this.#status = init.status || 200;
+      this.#statusText = init.statusText || '';
+      this.#headers = new Headers(init.headers);
+      this.#url = init.url || '';
+      this.#redirected = init.redirected || false;
+      this.#type = init.type || 'default';
+      this.#ok = this.#status >= 200 && this.#status < 300;
+      this.#bodyUsed = false;
+    }
+
+    get body() {
+      return this.#body;
+    }
+
+    get status() {
+      return this.#status;
+    }
+
+    get statusText() {
+      return this.#statusText;
+    }
+
+    get headers() {
+      return this.#headers;
+    }
+
+    get url() {
+      return this.#url;
+    }
+
+    get redirected() {
+      return this.#redirected;
+    }
+
+    get type() {
+      return this.#type;
+    }
+
+    get ok() {
+      return this.#ok;
+    }
+
+    get bodyUsed() {
+      return this.#bodyUsed;
+    }
+
+    // Internal method to set bodyUsed (used by body reading methods)
+    #setBodyUsed() {
+      this.#bodyUsed = true;
+    }
+
+    // Internal method to set type (used by static methods)
+    #setType(type) {
+      this.#type = type;
     }
 
     static error() {
       const response = new Response(null, { status: 0, statusText: '' });
-      response.type = 'error';
+      response.#setType('error');
       return response;
     }
 
     static redirect(url, status = 302) {
       const response = new Response(null, { status, headers: { Location: url } });
-      response.type = 'opaqueredirect';
+      response.#setType('opaqueredirect');
       return response;
     }
 
@@ -764,7 +938,7 @@
       if (this.bodyUsed) {
         throw new TypeError('Body has already been read');
       }
-      this.bodyUsed = true;
+      this.#setBodyUsed();
 
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
@@ -795,7 +969,7 @@
       if (this.bodyUsed) {
         throw new TypeError('Body has already been read');
       }
-      this.bodyUsed = true;
+      this.#setBodyUsed();
 
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
