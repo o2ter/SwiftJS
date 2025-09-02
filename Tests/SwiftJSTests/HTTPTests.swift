@@ -184,7 +184,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["method"].toString(), "PUT")
             XCTAssertEqual(result["json"]["action"].toString(), "update")
             expectation.fulfill()
@@ -224,7 +224,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["ok"].boolValue ?? false)
             XCTAssertEqual(result["method"].toString(), "DELETE")
@@ -268,7 +268,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["customHeader"].toString(), "SwiftJS-Test")
             XCTAssertEqual(result["userAgent"].toString(), "SwiftJS/1.0")
             XCTAssertEqual(result["accept"].toString(), "application/json")
@@ -305,7 +305,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertTrue(result["hasSlideshow"].boolValue ?? false)
             XCTAssertEqual(result["author"].toString(), "Yours Truly")
             expectation.fulfill()
@@ -340,7 +340,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertTrue(result["isString"].boolValue ?? false)
             XCTAssertTrue(result["hasContent"].boolValue ?? false)
             XCTAssertTrue(result["hasUserAgent"].boolValue ?? false)
@@ -377,7 +377,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["status"].numberValue, 404)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -410,7 +410,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["status"].numberValue, 500)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
@@ -451,7 +451,7 @@ final class HTTPTests: XCTestCase {
         // Set up completion callback
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
-            XCTAssertFalse(result["error"].isString)
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["count"].numberValue, 3)
             XCTAssertTrue(result["allOk"].boolValue ?? false)
             expectation.fulfill()
