@@ -78,15 +78,13 @@ final class HTTPTests: XCTestCase {
             const xhr = new XMLHttpRequest();
             xhr.open('GET', 'https://httpbin.org/get');
             xhr.onload = function() {
-                globalThis.getResult = {
+                testCompleted({
                     status: xhr.status,
                     success: xhr.status >= 200 && xhr.status < 300
-                };
-                globalThis.testCompleted();
+                });
             };
             xhr.onerror = function() {
-                globalThis.getResult = { error: true };
-                globalThis.testCompleted();
+                testCompleted({ error: 'XMLHttpRequest failed' });
             };
             xhr.send();
         """
@@ -94,10 +92,9 @@ final class HTTPTests: XCTestCase {
         let context = SwiftJS()
         
         // Set up completion callback
-        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
-            args, this in
-            let result = context.evaluateScript("globalThis.getResult")
-            XCTAssertFalse(result.isUndefined)
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertTrue(result["success"].boolValue ?? false)
             expectation.fulfill()
             return SwiftJS.Value.undefined
@@ -124,18 +121,16 @@ final class HTTPTests: XCTestCase {
             xhr.onload = function() {
                 try {
                     const response = JSON.parse(xhr.responseText);
-                    globalThis.postResult = {
+                    testCompleted({
                         status: xhr.status,
                         dataReceived: response.json && response.json.name === 'SwiftJS Test'
-                    };
+                    });
                 } catch (e) {
-                    globalThis.postResult = { parseError: true };
+                    testCompleted({ error: 'Parse error: ' + e.message });
                 }
-                globalThis.testCompleted();
             };
             xhr.onerror = function() {
-                globalThis.postResult = { error: true };
-                globalThis.testCompleted();
+                testCompleted({ error: 'XMLHttpRequest failed' });
             };
             xhr.send(data);
         """
@@ -143,10 +138,9 @@ final class HTTPTests: XCTestCase {
         let context = SwiftJS()
         
         // Set up completion callback
-        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
-            args, this in
-            let result = context.evaluateScript("globalThis.postResult")
-            XCTAssertFalse(result.isUndefined)
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["dataReceived"].boolValue ?? false)
             expectation.fulfill()
