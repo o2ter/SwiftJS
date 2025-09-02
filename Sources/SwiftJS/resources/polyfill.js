@@ -463,7 +463,7 @@
       this.#setReadyState(XMLHttpRequest.LOADING);
       this.#dispatchEvent('loadstart');
 
-      const session = __APPLE_SPEC__.URLSession.getShared();
+      const session = __APPLE_SPEC__.URLSession.shared();
       const promise = session.dataTaskWithRequestCompletionHandler(this.#request, null);
 
       promise.then((result) => {
@@ -838,7 +838,7 @@
       }
     }
 
-    const session = __APPLE_SPEC__.URLSession.getShared();
+    const session = __APPLE_SPEC__.URLSession.shared();
     const result = await session.dataTaskWithRequestCompletionHandler(urlRequest, null);
 
     const response = new Response(result.data, {

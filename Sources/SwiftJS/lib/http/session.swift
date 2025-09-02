@@ -26,27 +26,24 @@
 import JavaScriptCore
 
 @objc protocol JSURLSessionExport: JSExport {
-    @objc static func getShared() -> JSURLSession
-    @objc init()
+
+    static var shared: JSURLSession { get }
     
-    @objc func dataTaskWithRequestCompletionHandler(
+    func dataTaskWithRequestCompletionHandler(
         _ request: JSURLRequest, _ completionHandler: JSValue?
     ) -> JSValue?
-    @objc func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue?
+    
+    func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue?
 }
 
 @objc final class JSURLSession: NSObject, JSURLSessionExport {
     
     let session: URLSession = URLSession(configuration: .ephemeral)
 
-    nonisolated(unsafe) 
-        private static let _shared: JSURLSession = JSURLSession()
-
-    @objc static func getShared() -> JSURLSession {
-        return _shared
-    }
+    nonisolated(unsafe)
+        static let shared: JSURLSession = JSURLSession()
     
-    @objc func dataTaskWithRequestCompletionHandler(
+    func dataTaskWithRequestCompletionHandler(
         _ request: JSURLRequest, _ completionHandler: JSValue?
     ) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
@@ -96,7 +93,7 @@ import JavaScriptCore
         }
     }
 
-    @objc func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue? {
+    func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue? {
         let request = JSURLRequest(url: url)
         return dataTaskWithRequestCompletionHandler(request, completionHandler)
     }

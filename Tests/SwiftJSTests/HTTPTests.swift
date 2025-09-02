@@ -64,8 +64,8 @@ final class HTTPTests: XCTestCase {
     // MARK: - JSURLSession Tests
     
     func testJSURLSessionShared() {
-        let session1 = JSURLSession.getShared()
-        let session2 = JSURLSession.getShared()
+        let session1 = JSURLSession.shared
+        let session2 = JSURLSession.shared
         XCTAssertTrue(session1 === session2)  // Should be the same instance
     }
     

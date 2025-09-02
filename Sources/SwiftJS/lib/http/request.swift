@@ -27,26 +27,26 @@ import Foundation
 import JavaScriptCore
 
 @objc protocol JSURLRequestExport: JSExport {
-    @objc init(url: String)
-    @objc static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest
+    init(url: String)
+    static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest
     
-    @objc var url: String? { get }
-    @objc var httpMethod: String? { get set }
-    @objc var allHTTPHeaderFields: [String: String]? { get set }
-    @objc var httpBody: JSValue? { get set }
-    @objc var timeoutInterval: Double { get set }
-    @objc var cachePolicy: Int { get set }
+    var url: String? { get }
+    var httpMethod: String { get set }
+    var allHTTPHeaderFields: [String: String] { get set }
+    var httpBody: JSValue? { get set }
+    var timeoutInterval: Double { get set }
+    var cachePolicy: Int { get set }
     
-    @objc func setValueForHTTPHeaderField(_ value: String?, _ field: String)
-    @objc func addValueForHTTPHeaderField(_ value: String, _ field: String)
-    @objc func valueForHTTPHeaderField(_ field: String) -> String?
+    func setValueForHTTPHeaderField(_ value: String?, _ field: String)
+    func addValueForHTTPHeaderField(_ value: String, _ field: String)
+    func valueForHTTPHeaderField(_ field: String) -> String?
 }
 
 @objc final class JSURLRequest: NSObject, JSURLRequestExport {
     
     private var request: URLRequest
     
-    @objc init(url: String) {
+    init(url: String) {
         guard let url = URL(string: url) else {
             self.request = URLRequest(url: URL(string: "about:blank")!)
             super.init()
@@ -71,25 +71,25 @@ import JavaScriptCore
         super.init()
     }
     
-    @objc static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest {
+    static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest {
         return JSURLRequest(url: url, cachePolicy: cachePolicy, timeoutInterval: timeoutInterval)
     }
     
-    @objc var url: String? {
+    var url: String? {
         return request.url?.absoluteString
     }
     
-    @objc var httpMethod: String? {
+    var httpMethod: String {
         get { return request.httpMethod ?? "GET" }
         set { request.httpMethod = newValue }
     }
     
-    @objc var allHTTPHeaderFields: [String: String]? {
-        get { return request.allHTTPHeaderFields }
+    var allHTTPHeaderFields: [String: String] {
+        get { return request.allHTTPHeaderFields ?? [:] }
         set { request.allHTTPHeaderFields = newValue }
     }
     
-    @objc var httpBody: JSValue? {
+    var httpBody: JSValue? {
         get {
             guard let data = request.httpBody,
                   let context = JSContext.current() else { return nil }
@@ -109,12 +109,12 @@ import JavaScriptCore
         }
     }
     
-    @objc var timeoutInterval: Double {
+    var timeoutInterval: Double {
         get { return request.timeoutInterval }
         set { request.timeoutInterval = newValue }
     }
     
-    @objc var cachePolicy: Int {
+    var cachePolicy: Int {
         get { return Int(request.cachePolicy.rawValue) }
         set { 
             if let policy = URLRequest.CachePolicy(rawValue: UInt(newValue)) {
@@ -123,15 +123,15 @@ import JavaScriptCore
         }
     }
     
-    @objc func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
+    func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
         request.setValue(value, forHTTPHeaderField: field)
     }
     
-    @objc func addValueForHTTPHeaderField(_ value: String, _ field: String) {
+    func addValueForHTTPHeaderField(_ value: String, _ field: String) {
         request.addValue(value, forHTTPHeaderField: field)
     }
     
-    @objc func valueForHTTPHeaderField(_ field: String) -> String? {
+    func valueForHTTPHeaderField(_ field: String) -> String? {
         return request.value(forHTTPHeaderField: field)
     }
     
@@ -141,14 +141,14 @@ import JavaScriptCore
 }
 
 @objc protocol JSURLResponseExport: JSExport {
-    @objc var url: String? { get }
-    @objc var statusCode: Int { get }
-    @objc var allHeaderFields: [String: String] { get }
-    @objc var textEncodingName: String? { get }
-    @objc var expectedContentLength: Int64 { get }
-    @objc var mimeType: String? { get }
+    var url: String? { get }
+    var statusCode: Int { get }
+    var allHeaderFields: [String: String] { get }
+    var textEncodingName: String? { get }
+    var expectedContentLength: Int64 { get }
+    var mimeType: String? { get }
     
-    @objc func value(forHTTPHeaderField field: String) -> String?
+    func value(forHTTPHeaderField field: String) -> String?
 }
 
 @objc final class JSURLResponse: NSObject, JSURLResponseExport {
@@ -160,15 +160,15 @@ import JavaScriptCore
         super.init()
     }
     
-    @objc var url: String? {
+    var url: String? {
         return response.url?.absoluteString
     }
     
-    @objc var statusCode: Int {
+    var statusCode: Int {
         return response.statusCode
     }
     
-    @objc var allHeaderFields: [String: String] {
+    var allHeaderFields: [String: String] {
         return response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
             if let key = pair.key as? String, let value = pair.value as? String {
                 result[key] = value
@@ -176,19 +176,19 @@ import JavaScriptCore
         }
     }
     
-    @objc var textEncodingName: String? {
+    var textEncodingName: String? {
         return response.textEncodingName
     }
     
-    @objc var expectedContentLength: Int64 {
+    var expectedContentLength: Int64 {
         return response.expectedContentLength
     }
     
-    @objc var mimeType: String? {
+    var mimeType: String? {
         return response.mimeType
     }
     
-    @objc func value(forHTTPHeaderField field: String) -> String? {
+    func value(forHTTPHeaderField field: String) -> String? {
         return response.value(forHTTPHeaderField: field)
     }
 }
