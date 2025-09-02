@@ -28,154 +28,435 @@ import SwiftJS
 
 let context = SwiftJS()
 
-// Load existing demo resources
-let corejsURL = Bundle.module.url(forResource: "corejs", withExtension: "js")
-let corejs = try String(contentsOf: corejsURL!)
+// === SwiftJS Streaming Verification Test ===
+print("=== SwiftJS Streaming Verification Test ===")
+print("Testing upload and download streaming capabilities...\n")
 
-let script1URL = Bundle.module.url(forResource: "script_1", withExtension: "js")
-let script1 = try String(contentsOf: script1URL!)
+// Test 1: Verify basic streaming infrastructure
+print("1. Testing basic streaming infrastructure...")
+let streamingInfrastructureTest = """
+// Check that all stream classes exist and are constructible
+const readableStreamExists = typeof ReadableStream === 'function';
+const writableStreamExists = typeof WritableStream === 'function';
+const transformStreamExists = typeof TransformStream === 'function';
 
-let script2URL = Bundle.module.url(forResource: "script_2", withExtension: "js")
-let script2 = try String(contentsOf: script2URL!)
+console.log('ReadableStream exists:', readableStreamExists);
+console.log('WritableStream exists:', writableStreamExists);
+console.log('TransformStream exists:', transformStreamExists);
 
-context.evaluateScript(script1)
-context.evaluateScript(corejs)
-context.evaluateScript(script2)
+// Test basic stream creation
+try {
+    const readable = new ReadableStream();
+    const writable = new WritableStream();
+    const transform = new TransformStream();
+    console.log('✓ All stream types can be instantiated');
+} catch (error) {
+    console.error('✗ Stream instantiation error:', error.message);
+}
+"""
 
-// Test streaming functionality
-print("Testing SwiftJS Streaming Support...")
+context.evaluateScript(streamingInfrastructureTest)
 
-// Test 1: Basic ReadableStream functionality
-print("\n1. Testing ReadableStream creation and reading...")
-let streamingTest = """
-  const stream = new ReadableStream({
-      start(controller) {
-          controller.enqueue(new TextEncoder().encode('Hello '));
-          controller.enqueue(new TextEncoder().encode('Streaming '));
-          controller.enqueue(new TextEncoder().encode('World!'));
-          controller.close();
-      }
-  });
+// Test 2: Upload streaming simulation
+print("\n2. Testing upload streaming simulation...")
+let uploadStreamingTest = """
+async function testUploadStreaming() {
+    console.log('Testing upload streaming...');
+    
+    // Create a readable stream that simulates large data being uploaded
+    const uploadData = 'This is chunk of upload data. ';
+    const totalChunks = 5;
+    let chunksSent = 0;
+    
+    const uploadStream = new ReadableStream({
+        start(controller) {
+            console.log('Upload stream started');
+        },
+        pull(controller) {
+            if (chunksSent < totalChunks) {
+                const chunk = new TextEncoder().encode(uploadData + `Chunk ${chunksSent + 1}. `);
+                controller.enqueue(chunk);
+                chunksSent++;
+                console.log(`Enqueued upload chunk ${chunksSent}/${totalChunks}`);
+            } else {
+                controller.close();
+                console.log('Upload stream closed');
+            }
+        }
+    });
+    
+    // Simulate reading the stream (as would happen during upload)
+    const reader = uploadStream.getReader();
+    const uploadedChunks = [];
+    let totalUploadedBytes = 0;
+    
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            uploadedChunks.push(value);
+            totalUploadedBytes += value.byteLength;
+            console.log(`Uploaded chunk: ${value.byteLength} bytes`);
+        }
+        
+        console.log(`✓ Upload complete: ${uploadedChunks.length} chunks, ${totalUploadedBytes} bytes total`);
+        
+        // Verify the data integrity
+        let combinedData = new Uint8Array(totalUploadedBytes);
+        let offset = 0;
+        uploadedChunks.forEach(chunk => {
+            combinedData.set(chunk, offset);
+            offset += chunk.byteLength;
+        });
+        
+        const finalText = new TextDecoder().decode(combinedData);
+        console.log('✓ Upload data integrity check:', finalText.includes('Chunk 5') ? 'PASSED' : 'FAILED');
+        
+    } catch (error) {
+        console.error('✗ Upload streaming error:', error.message);
+    } finally {
+        reader.releaseLock();
+    }
+}
 
-  const reader = stream.getReader();
-  const chunks = [];
+testUploadStreaming().catch(error => {
+    console.error('✗ Upload streaming test failed:', error.message);
+});
+"""
 
-  async function readAll() {
-      while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-      }
-      
-      let totalLength = 0;
-      chunks.forEach(chunk => totalLength += chunk.byteLength);
-      const combined = new Uint8Array(totalLength);
-      let offset = 0;
-      chunks.forEach(chunk => {
-          combined.set(chunk, offset);
-          offset += chunk.byteLength;
-      });
-      
-      return new TextDecoder().decode(combined);
-  }
+context.evaluateScript(uploadStreamingTest)
 
-  readAll().then(text => {
-      console.log('Stream result:', text);
-  }).catch(error => {
-      console.error('Stream error:', error.message);
-  });
-  """
+// Test 3: Download streaming simulation
+print("\n3. Testing download streaming simulation...")
+let downloadStreamingTest = """
+async function testDownloadStreaming() {
+    console.log('Testing download streaming...');
+    
+    // Simulate a Response with streaming body (like from fetch)
+    const responseData = 'This is streaming response data. '.repeat(10);
+    const response = new Response(responseData);
+    
+    console.log('✓ Response body is ReadableStream:', response.body instanceof ReadableStream);
+    
+    // Test progressive reading of the response
+    const reader = response.body.getReader();
+    const downloadedChunks = [];
+    let totalDownloadedBytes = 0;
+    let chunkCount = 0;
+    
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            chunkCount++;
+            downloadedChunks.push(value);
+            totalDownloadedBytes += value.byteLength;
+            console.log(`Downloaded chunk ${chunkCount}: ${value.byteLength} bytes`);
+            
+            // Simulate processing data as it arrives (streaming processing)
+            const chunkText = new TextDecoder().decode(value);
+            if (chunkText.includes('streaming')) {
+                console.log(`✓ Found "streaming" keyword in chunk ${chunkCount}`);
+            }
+        }
+        
+        console.log(`✓ Download complete: ${chunkCount} chunks, ${totalDownloadedBytes} bytes total`);
+        
+        // Verify data integrity
+        let combinedData = new Uint8Array(totalDownloadedBytes);
+        let offset = 0;
+        downloadedChunks.forEach(chunk => {
+            combinedData.set(chunk, offset);
+            offset += chunk.byteLength;
+        });
+        
+        const finalText = new TextDecoder().decode(combinedData);
+        console.log('✓ Download data integrity check:', finalText === responseData ? 'PASSED' : 'FAILED');
+        
+    } catch (error) {
+        console.error('✗ Download streaming error:', error.message);
+    } finally {
+        reader.releaseLock();
+    }
+}
 
-context.evaluateScript(streamingTest)
+testDownloadStreaming().catch(error => {
+    console.error('✗ Download streaming test failed:', error.message);
+});
+"""
 
-// Test 2: Response body streaming
-print("\n2. Testing Response body streaming...")
-let responseStreamTest = """
-  const response = new Response('Hello from Response body stream!');
-  console.log('Response body is ReadableStream:', response.body instanceof ReadableStream);
+context.evaluateScript(downloadStreamingTest)
 
-  response.text().then(text => {
-      console.log('Response text:', text);
-  }).catch(error => {
-      console.error('Response error:', error.message);
-  });
-  """
+// Test 4: Transform stream for data processing during upload/download
+print("\n4. Testing transform streaming (processing data in transit)...")
+let transformStreamingTest = """
+async function testTransformStreaming() {
+    console.log('Testing transform streaming...');
+    
+    // Create a transform that compresses whitespace (simulating data processing)
+    const compressionTransform = new TransformStream({
+        transform(chunk, controller) {
+            try {
+                const text = new TextDecoder().decode(chunk);
+                const compressed = text.replace(/\\s+/g, ' ').trim();
+                const compressedChunk = new TextEncoder().encode(compressed);
+                controller.enqueue(compressedChunk);
+                console.log(`Transformed chunk: ${chunk.byteLength} -> ${compressedChunk.byteLength} bytes`);
+            } catch (error) {
+                console.error('✗ Transform error:', error.message);
+                controller.error(error);
+            }
+        }
+    });
+    
+    // Create source data with extra whitespace
+    const sourceData = 'This    has     extra    whitespace     and     should     be     compressed.';
+    const sourceStream = new ReadableStream({
+        start(controller) {
+            controller.enqueue(new TextEncoder().encode(sourceData));
+            controller.close();
+        }
+    });
+    
+    // Pipe through transform
+    const reader = sourceStream.getReader();
+    const writer = compressionTransform.writable.getWriter();
+    const outputReader = compressionTransform.readable.getReader();
+    
+    // Pipe source to transform
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                await writer.close();
+                break;
+            }
+            await writer.write(value);
+        }
+    } catch (error) {
+        console.error('✗ Piping error:', error.message);
+    }
+    
+    // Read transformed output
+    try {
+        const { value } = await outputReader.read();
+        if (value) {
+            const result = new TextDecoder().decode(value);
+            console.log('Original:', sourceData);
+            console.log('Transformed:', result);
+            console.log('✓ Transform successful:', result.includes('compressed') && !result.includes('  ') ? 'PASSED' : 'FAILED');
+        }
+    } catch (error) {
+        console.error('✗ Transform output reading error:', error.message);
+    }
+}
 
-context.evaluateScript(responseStreamTest)
+testTransformStreaming().catch(error => {
+    console.error('✗ Transform streaming test failed:', error.message);
+});
+"""
 
-// Test 3: Stream tee functionality
-print("\n3. Testing stream tee functionality...")
-let teeStreamTest = """
-  const source = new ReadableStream({
-      start(controller) {
-          controller.enqueue(new TextEncoder().encode('Tee test'));
-          controller.close();
-      }
-  });
+context.evaluateScript(transformStreamingTest)
 
-  const [stream1, stream2] = source.tee();
+// Test 5: Request with streaming body (simulating actual upload)
+print("\n5. Testing Request with streaming body...")
+let requestBodyStreamingTest = """
+async function testRequestStreamingBody() {
+    console.log('Testing Request with streaming body...');
+    
+    try {
+        // Create a stream for request body
+        let chunkCount = 0;
+        const requestBodyStream = new ReadableStream({
+            start(controller) {
+                const data = '{"message": "This is streaming request data", "chunks": [';
+                controller.enqueue(new TextEncoder().encode(data));
+            },
+            pull(controller) {
+                // Simulate multiple chunks of JSON data
+                if (chunkCount < 3) {
+                    const chunk = `{"id": ${chunkCount}, "data": "chunk${chunkCount}"}`;
+                    if (chunkCount > 0) {
+                        controller.enqueue(new TextEncoder().encode(','));
+                    }
+                    controller.enqueue(new TextEncoder().encode(chunk));
+                    chunkCount++;
+                } else {
+                    controller.enqueue(new TextEncoder().encode(']}'));
+                    controller.close();
+                }
+            }
+        });
+        
+        // Create request with streaming body
+        const request = new Request('https://httpbin.org/post', {
+            method: 'POST',
+            body: requestBodyStream,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('✓ Request created successfully');
+        console.log('✓ Request has body:', request.body !== null);
+        console.log('✓ Request body is stream:', request.body instanceof ReadableStream);
+        console.log('✓ Request method:', request.method);
+        console.log('✓ Request content-type:', request.headers.get('Content-Type'));
+        
+        // Read the request body to verify it works
+        if (request.body) {
+            const bodyText = await request.text();
+            console.log('✓ Request body content length:', bodyText.length);
+            console.log('✓ Body is valid JSON:', (() => {
+                try { JSON.parse(bodyText); return 'PASSED'; } catch { return 'FAILED'; }
+            })());
+        }
+        
+    } catch (error) {
+        console.error('✗ Request streaming body error:', error.message);
+    }
+}
 
-  Promise.all([
-      stream1.getReader().read(),
-      stream2.getReader().read()
-  ]).then(([result1, result2]) => {
-      const text1 = new TextDecoder().decode(result1.value);
-      const text2 = new TextDecoder().decode(result2.value);
-      console.log('Tee result 1:', text1);
-      console.log('Tee result 2:', text2);
-      console.log('Tee results equal:', text1 === text2);
-  }).catch(error => {
-      console.error('Tee error:', error.message);
-  });
-  """
+testRequestStreamingBody().catch(error => {
+    console.error('✗ Request streaming body test failed:', error.message);
+});
+"""
 
-context.evaluateScript(teeStreamTest)
+context.evaluateScript(requestBodyStreamingTest)
 
-// Test 4: Request with streaming body
-print("\n4. Testing Request with streaming body...")
-let requestStreamTest = """
-  try {
-      const stream = new ReadableStream({
-          start(controller) {
-              controller.enqueue(new TextEncoder().encode('Streaming request body'));
-              controller.close();
-          }
-      });
-      
-      const request = new Request('https://example.com', {
-          method: 'POST',
-          body: stream
-      });
-      
-      console.log('Request body is stream:', request.body instanceof ReadableStream);
-      console.log('Request method:', request.method);
-  } catch (error) {
-      console.error('Request stream error:', error.message);
-  }
-  """
+// Test 6: Stream tee functionality (important for response cloning)
+print("\n6. Testing stream tee functionality...")
+let streamTeeTest = """
+async function testStreamTee() {
+    console.log('Testing stream tee functionality...');
+    
+    try {
+        const source = new ReadableStream({
+            start(controller) {
+                controller.enqueue(new TextEncoder().encode('Hello Tee Test'));
+                controller.close();
+            }
+        });
+        
+        const [stream1, stream2] = source.tee();
+        
+        const [result1, result2] = await Promise.all([
+            stream1.getReader().read(),
+            stream2.getReader().read()
+        ]);
+        
+        const text1 = new TextDecoder().decode(result1.value);
+        const text2 = new TextDecoder().decode(result2.value);
+        
+        console.log('✓ Tee result 1:', text1);
+        console.log('✓ Tee result 2:', text2);
+        console.log('✓ Tee results equal:', text1 === text2 ? 'PASSED' : 'FAILED');
+        
+    } catch (error) {
+        console.error('✗ Tee error:', error.message);
+    }
+}
 
-context.evaluateScript(requestStreamTest)
+testStreamTee().catch(error => {
+    console.error('✗ Tee test failed:', error.message);
+});
+"""
 
-// Test 5: Fetch with streaming response
-print("\n5. Testing fetch streaming response...")
-let fetchStreamTest = """
-  // Simple test - create a response and check if body is a stream
-  const testResponse = new Response('Test streaming response');
-  console.log('Fetch response body is stream:', testResponse.body instanceof ReadableStream);
+context.evaluateScript(streamTeeTest)
 
-  // Test reading from the stream
-  testResponse.body.getReader().read().then(({ done, value }) => {
-      if (!done) {
-          const text = new TextDecoder().decode(value);
-          console.log('Streamed response chunk:', text);
-      }
-  }).catch(error => {
-      console.error('Stream read error:', error.message);
-  });
-  """
+// Test 7: Actual fetch with streaming (if network available)
+print("\n7. Testing actual fetch with streaming response processing...")
+let actualFetchStreamingTest = """
+async function testFetchStreaming() {
+    console.log('Testing fetch with streaming response...');
+    
+    try {
+        // Use a simple endpoint that returns some data
+        console.log('Attempting to fetch from GitHub API...');
+        const response = await fetch('https://api.github.com/zen');
+        
+        console.log('✓ Fetch completed');
+        console.log('✓ Response status:', response.status);
+        console.log('✓ Response body is stream:', response.body instanceof ReadableStream);
+        
+        if (response.body instanceof ReadableStream) {
+            console.log('Processing response as stream...');
+            
+            const reader = response.body.getReader();
+            const chunks = [];
+            let totalBytes = 0;
+            
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    chunks.push(value);
+                    totalBytes += value.byteLength;
+                    console.log(`✓ Received chunk: ${value.byteLength} bytes`);
+                    
+                    // Process chunk immediately (streaming processing)
+                    const chunkText = new TextDecoder().decode(value);
+                    if (chunkText.length > 0) {
+                        console.log('Chunk preview:', chunkText.substring(0, 50) + (chunkText.length > 50 ? '...' : ''));
+                    }
+                }
+                
+                console.log(`✓ Stream processing complete: ${chunks.length} chunks, ${totalBytes} bytes`);
+                
+                // Combine all chunks to verify complete data
+                let combined = new Uint8Array(totalBytes);
+                let offset = 0;
+                chunks.forEach(chunk => {
+                    combined.set(chunk, offset);
+                    offset += chunk.byteLength;
+                });
+                
+                const fullText = new TextDecoder().decode(combined);
+                console.log('✓ Full response length:', fullText.length);
+                console.log('✓ Response is valid text:', fullText.length > 0 ? 'PASSED' : 'FAILED');
+                
+            } finally {
+                reader.releaseLock();
+            }
+        } else {
+            console.log('✗ Response body is not a stream');
+        }
+        
+    } catch (error) {
+        console.log('⚠️  Fetch streaming error (network may be unavailable):', error.message);
+        console.log('⚠️  This is expected if no internet connection is available');
+    }
+}
 
-context.evaluateScript(fetchStreamTest)
+testFetchStreaming().catch(error => {
+    console.log('⚠️  Fetch streaming test skipped (network issue):', error.message);
+});
+"""
 
-print("\n6. Running event loop to process async operations...")
+context.evaluateScript(actualFetchStreamingTest)
 
-RunLoop.main.run()
+print("\n8. Running event loop to process all async operations...")
+
+// Run the event loop for a limited time to let all async operations complete
+let eventLoop = RunLoop.current
+let finishTime = Date().addingTimeInterval(5.0) // Give 5 seconds for all operations
+
+while eventLoop.run(mode: .default, before: Date().addingTimeInterval(0.1)) && Date() < finishTime {
+    // Continue running the event loop
+}
+
+print("\n=== Streaming Verification Results ===")
+print("All streaming tests have been executed.")
+print("Look for ✓ (success) and ✗ (failure) markers in the output above.")
+print("\nExpected Results:")
+print("✓ Basic streaming infrastructure should work")
+print("✓ Upload streaming simulation should work") 
+print("✓ Download streaming simulation should work")
+print("✓ Transform streaming should work")
+print("✓ Request with streaming body should work")
+print("✓ Stream tee functionality should work")
+print("⚠️  Fetch with real network is optional (depends on connectivity)")
+print("\nIf all core tests show ✓, streaming is working correctly for upload and download!")
