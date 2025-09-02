@@ -1,34 +1,28 @@
-; (function () {
-  // Module-scoped symbols for internal, non-public APIs
-  const formDataData = Symbol('FormData._data');
-  const formDataToMultipart = Symbol('FormData._toMultipartString');
-  const formDataToURLEncoded = Symbol('FormData._toURLEncoded');
-  const blobParts = Symbol('Blob._parts');
-  const blobType = Symbol('Blob._type');
-  const blobPlaceholderPromise = Symbol('Blob._placeholderPromise');
-  const headersMap = Symbol('Headers._headers');
-  const requestBodyText = Symbol('Request._bodyText');
-  // Module-scoped symbol to hold per-stream internal state (keeps internals private)
-  const streamInternal = Symbol('Stream._internal');
-  // Module-scoped symbol to allow AbortController to mark a signal aborted without public underscore
-  const abortSignalMarkAborted = Symbol('AbortSignal._markAborted');
+(function () {
+  'use strict';
 
+  // Private symbols for internal APIs
+  const SYMBOLS = {
+    formDataData: Symbol('FormData._data'),
+    formDataToMultipart: Symbol('FormData._toMultipartString'),
+    formDataToURLEncoded: Symbol('FormData._toURLEncoded'),
+    blobParts: Symbol('Blob._parts'),
+    blobType: Symbol('Blob._type'),
+    blobPlaceholderPromise: Symbol('Blob._placeholderPromise'),
+    headersMap: Symbol('Headers._headers'),
+    requestBodyText: Symbol('Request._bodyText'),
+    streamInternal: Symbol('Stream._internal'),
+    abortSignalMarkAborted: Symbol('AbortSignal._markAborted')
+  };
+
+  // Process API - provides Node.js-like process object
   globalThis.process = new class Process {
-
     #env = { ...__APPLE_SPEC__.processInfo.environment };
     #argv = [...__APPLE_SPEC__.processInfo.arguments];
 
-    get env() {
-      return this.#env;
-    }
-
-    get argv() {
-      return this.#argv;
-    }
-
-    get pid() {
-      return __APPLE_SPEC__.processInfo.processIdentifier;
-    }
+    get env() { return this.#env; }
+    get argv() { return this.#argv; }
+    get pid() { return __APPLE_SPEC__.processInfo.processIdentifier; }
 
     cwd() {
       return __APPLE_SPEC__.FileSystem.currentDirectoryPath();
@@ -37,216 +31,239 @@
     chdir(directory) {
       return __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(directory);
     }
-  }
+  };
 
+  // Event API - basic DOM-like event system
   globalThis.Event = class Event {
-    constructor(type, options) {
+    constructor(type, options = {}) {
       this.type = type;
       this.target = null;
       this.currentTarget = null;
       this.eventPhase = 0;
-      this.bubbles = options?.bubbles || false;
-      this.cancelable = options?.cancelable || false;
+      this.bubbles = options.bubbles || false;
+      this.cancelable = options.cancelable || false;
+      this.defaultPrevented = false;
     }
+
     stopPropagation() {
       this.eventPhase = 1;
     }
+
     preventDefault() {
       if (this.cancelable) {
         this.defaultPrevented = true;
       }
     }
-  }
+  };
 
   globalThis.EventTarget = class EventTarget {
-    #listeners;
-    constructor() {
-      this.#listeners = {};
-    }
+    #listeners = {};
+
     addEventListener(type, listener) {
       if (!this.#listeners[type]) {
         this.#listeners[type] = [];
       }
       this.#listeners[type].push(listener);
     }
+
     removeEventListener(type, listener) {
       if (!this.#listeners[type]) return;
       this.#listeners[type] = this.#listeners[type].filter(l => l !== listener);
     }
+
     dispatchEvent(event) {
       if (!this.#listeners[event.type]) return;
       for (const listener of this.#listeners[event.type]) {
         listener(event);
       }
     }
-  }
+  };
 
+  // AbortSignal and AbortController - for cancellation
   globalThis.AbortSignal = class AbortSignal extends EventTarget {
-    #aborted;
-    #onabort;
-    constructor() {
-      super();
-      this.#aborted = false;
-    }
-    get aborted() {
-      return this.#aborted;
-    }
-    get onabort() {
-      return this.#onabort;
-    }
+    #aborted = false;
+    #onabort = null;
+
+    get aborted() { return this.#aborted; }
+    get onabort() { return this.#onabort; }
+
     set onabort(listener) {
-      const existing = this.#onabort;
-      if (existing) {
-        this.removeEventListener("abort", existing);
+      if (this.#onabort) {
+        this.removeEventListener('abort', this.#onabort);
       }
       this.#onabort = listener;
-      this.addEventListener("abort", listener);
-    }
-    // internal marker used by AbortController (kept module-private via symbol)
-    [abortSignalMarkAborted]() {
-      this.#aborted = true;
-    }
-  }
-
-  globalThis.AbortController = class AbortController {
-    #signal;
-    constructor() {
-      this.#signal = new AbortSignal();
-    }
-    get signal() {
-      return this.#signal;
-    }
-    abort() {
-      const signal = this.signal;
-      if (!signal.aborted) {
-        // mark aborted using module-private symbol method
-        signal[abortSignalMarkAborted]();
-        signal.dispatchEvent(new Event("abort"));
+      if (listener) {
+        this.addEventListener('abort', listener);
       }
     }
-  }
 
+    [SYMBOLS.abortSignalMarkAborted]() {
+      this.#aborted = true;
+    }
+  };
+
+  globalThis.AbortController = class AbortController {
+    #signal = new AbortSignal();
+
+    get signal() { return this.#signal; }
+
+    abort() {
+      if (!this.#signal.aborted) {
+        this.#signal[SYMBOLS.abortSignalMarkAborted]();
+        this.#signal.dispatchEvent(new Event('abort'));
+      }
+    }
+  };
+
+  // Crypto API - cryptographic functions
   globalThis.crypto = new class Crypto {
     randomUUID() {
       return __APPLE_SPEC__.crypto.randomUUID();
     }
+
     randomBytes(length) {
       if (!Number.isSafeInteger(length) || length < 0) {
-        throw Error('Invalid length');
+        throw new Error('Invalid length');
       }
       return __APPLE_SPEC__.crypto.randomBytes(length);
     }
-    getRandomValues(b) {
-      if (!ArrayBuffer.isView(b)) {
-        throw Error('Invalid type of buffer');
+
+    getRandomValues(buffer) {
+      if (!ArrayBuffer.isView(buffer)) {
+        throw new Error('Invalid type of buffer');
       }
-      const bytes = b instanceof Uint8Array ? b : new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+      const bytes = buffer instanceof Uint8Array
+        ? buffer
+        : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       __APPLE_SPEC__.crypto.getRandomValues(bytes);
-      return b;
-    }
-  }
-
-  // TextEncoder and TextDecoder implementation
-  globalThis.TextEncoder = class TextEncoder {
-    constructor(encoding = 'utf-8') {
-      this.encoding = encoding;
-    }
-
-    static #byteLength(string) {
-      if (string == null) return 0;
-      if (typeof string !== 'string') string = String(string);
-      let len = 0;
-      for (let i = 0; i < string.length; i++) {
-        let c = string.charCodeAt(i);
-        if (c < 0x80) {
-          len += 1;
-        } else if (c < 0x800) {
-          len += 2;
-        } else if ((c & 0xFC00) === 0xD800 && i + 1 < string.length && (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-          // surrogate pair
-          i++;
-          len += 4;
-        } else {
-          len += 3;
-        }
-      }
-      return len;
-    }
-
-    encode(string) {
-      const utf8 = new Uint8Array(TextEncoder.#byteLength(string));
-      let i = 0;
-      for (let ci = 0; ci !== string.length; ci++) {
-        let c = string.charCodeAt(ci);
-        if (c < 128) {
-          utf8[i++] = c;
-          continue;
-        }
-        if (c < 2048) {
-          utf8[i++] = c >> 6 | 192;
-        } else {
-          if ((c & 0xFC00) === 0xD800 && ci + 1 < string.length && (string.charCodeAt(ci + 1) & 0xFC00) === 0xDC00) {
-            c = 0x10000 + ((c & 0x03FF) << 10) + (string.charCodeAt(++ci) & 0x03FF);
-            utf8[i++] = c >> 18 | 240;
-            utf8[i++] = c >> 12 & 63 | 128;
-          } else {
-            utf8[i++] = c >> 12 | 224;
-          }
-          utf8[i++] = c >> 6 & 63 | 128;
-        }
-        utf8[i++] = c & 63 | 128;
-      }
-      return utf8.subarray(0, i);
+      return buffer;
     }
   };
 
-  globalThis.TextDecoder = class TextDecoder {
-    constructor(encoding = 'utf-8') {
-      this.encoding = encoding;
+  // TextEncoder - encode strings to UTF-8
+  globalThis.TextEncoder = class TextEncoder {
+    encoding = 'utf-8';
+
+    static #getByteLength(string) {
+      if (string == null) return 0;
+      if (typeof string !== 'string') string = String(string);
+
+      let length = 0;
+      for (let i = 0; i < string.length; i++) {
+        const code = string.charCodeAt(i);
+        if (code < 0x80) {
+          length += 1;
+        } else if (code < 0x800) {
+          length += 2;
+        } else if ((code & 0xFC00) === 0xD800 && i + 1 < string.length &&
+          (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
+        // Surrogate pair
+          i++;
+          length += 4;
+        } else {
+          length += 3;
+        }
+      }
+      return length;
     }
 
-    decode(uint8Array) {
-      if (!uint8Array) return '';
-      const bytes = uint8Array instanceof Uint8Array ? uint8Array : new Uint8Array(uint8Array);
+    encode(string = '') {
+      const utf8 = new Uint8Array(TextEncoder.#getByteLength(string));
+      let byteIndex = 0;
+
+      for (let charIndex = 0; charIndex < string.length; charIndex++) {
+        let code = string.charCodeAt(charIndex);
+
+        if (code < 128) {
+          utf8[byteIndex++] = code;
+          continue;
+        }
+
+        if (code < 2048) {
+          utf8[byteIndex++] = code >> 6 | 192;
+        } else {
+          // Handle surrogate pairs
+          if ((code & 0xFC00) === 0xD800 && charIndex + 1 < string.length &&
+            (string.charCodeAt(charIndex + 1) & 0xFC00) === 0xDC00) {
+            code = 0x10000 + ((code & 0x03FF) << 10) + (string.charCodeAt(++charIndex) & 0x03FF);
+            utf8[byteIndex++] = code >> 18 | 240;
+            utf8[byteIndex++] = code >> 12 & 63 | 128;
+          } else {
+            utf8[byteIndex++] = code >> 12 | 224;
+          }
+          utf8[byteIndex++] = code >> 6 & 63 | 128;
+        }
+        utf8[byteIndex++] = code & 63 | 128;
+      }
+
+      return utf8.subarray(0, byteIndex);
+    }
+  };
+
+  // TextDecoder - decode UTF-8 to strings
+  globalThis.TextDecoder = class TextDecoder {
+    encoding = 'utf-8';
+
+    decode(input) {
+      if (!input) return '';
+
+      const bytes = input instanceof Uint8Array
+        ? input
+        : new Uint8Array(input);
+
       let result = '';
       let i = 0;
 
       while (i < bytes.length) {
-        let byte1 = bytes[i++];
+        const byte1 = bytes[i++];
 
         if (byte1 < 128) {
           result += String.fromCharCode(byte1);
         } else if ((byte1 >> 5) === 6) {
-          let byte2 = bytes[i++];
+          const byte2 = bytes[i++];
           result += String.fromCharCode(((byte1 & 31) << 6) | (byte2 & 63));
         } else if ((byte1 >> 4) === 14) {
-          let byte2 = bytes[i++];
-          let byte3 = bytes[i++];
-          result += String.fromCharCode(((byte1 & 15) << 12) | ((byte2 & 63) << 6) | (byte3 & 63));
+          const byte2 = bytes[i++];
+          const byte3 = bytes[i++];
+          result += String.fromCharCode(
+            ((byte1 & 15) << 12) | ((byte2 & 63) << 6) | (byte3 & 63)
+          );
         } else if ((byte1 >> 3) === 30) {
-          let byte2 = bytes[i++];
-          let byte3 = bytes[i++];
-          let byte4 = bytes[i++];
-          let codePoint = ((byte1 & 7) << 18) | ((byte2 & 63) << 12) | ((byte3 & 63) << 6) | (byte4 & 63);
+          const byte2 = bytes[i++];
+          const byte3 = bytes[i++];
+          const byte4 = bytes[i++];
+          let codePoint = ((byte1 & 7) << 18) | ((byte2 & 63) << 12) |
+            ((byte3 & 63) << 6) | (byte4 & 63);
           codePoint -= 0x10000;
-          result += String.fromCharCode(0xD800 + (codePoint >> 10), 0xDC00 + (codePoint & 1023));
+          result += String.fromCharCode(
+            0xD800 + (codePoint >> 10),
+            0xDC00 + (codePoint & 1023)
+          );
         }
       }
       return result;
     }
   };
 
-  // Minimal Blob / File implementation
-  // Supports parts made of: string, ArrayBuffer, TypedArray, Blob
+  // Blob - binary data container
   globalThis.Blob = class Blob {
     #size = 0;
     #type = '';
 
     constructor(parts = [], options = {}) {
-      this[blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
-      this.#type = (options && options.type) ? String(options.type).toLowerCase() : '';
+      this[SYMBOLS.blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
+      this.#type = String(options.type || '').toLowerCase();
+      this.#calculateSize();
+      this[SYMBOLS.blobType] = this.#type;
+      this[Symbol.toStringTag] = 'Blob';
+    }
+
+    get size() { return this.#size; }
+    get type() { return this.#type; }
+
+    #calculateSize() {
       const encoder = new TextEncoder();
-      for (const part of this[blobParts]) {
+      for (const part of this[SYMBOLS.blobParts]) {
         if (typeof part === 'string') {
           this.#size += encoder.encode(part).length;
         } else if (part instanceof ArrayBuffer) {
@@ -255,86 +272,70 @@
           this.#size += part.byteLength;
         } else if (part instanceof Blob) {
           this.#size += part.size || 0;
-        } else if (part == null) {
-          // ignore
-        } else {
-          // fallback to string conversion
-          const s = String(part);
-          this.#size += encoder.encode(s).length;
+        } else if (part != null) {
+          // Fallback to string conversion
+          this.#size += encoder.encode(String(part)).length;
         }
       }
-      // Common web API fields
-      this[blobType] = this.#type;
-      this[Symbol.toStringTag] = 'Blob';
     }
 
-    get size() {
-      return this.#size;
-    }
-
-    get type() {
-      return this.#type;
-    }
-
-    // Internal method to set size (used by slice method)
     #setSize(size) {
       this.#size = size;
     }
 
-    async arrayBuffer() {
-      // Build the parts to process: if any part is an async placeholder, resolve them first.
-      let partsToProcess = this[blobParts];
-      if (partsToProcess?.some(p => p?.__asyncBlob)) {
-        const resolved = [];
-        for (const p of partsToProcess) {
-          if (p?.__asyncBlob) {
-            const b = await p[blobPlaceholderPromise];
-            // b is a Blob
-            const buff = await b.arrayBuffer();
-            resolved.push(new Uint8Array(buff));
-          } else {
-            resolved.push(p);
-          }
+    async #processAsyncParts(parts) {
+      const resolved = [];
+      for (const part of parts) {
+        if (part?.__asyncBlob) {
+          const blob = await part[SYMBOLS.blobPlaceholderPromise];
+          const buffer = await blob.arrayBuffer();
+          resolved.push(new Uint8Array(buffer));
+        } else {
+          resolved.push(part);
         }
-        partsToProcess = resolved;
+      }
+      return resolved;
+    }
+
+    async arrayBuffer() {
+      let partsToProcess = this[SYMBOLS.blobParts];
+
+      // Handle async placeholders
+      if (partsToProcess?.some(p => p?.__asyncBlob)) {
+        partsToProcess = await this.#processAsyncParts(partsToProcess);
       }
 
       const encoder = new TextEncoder();
       const chunks = [];
-      let total = 0;
+      let totalSize = 0;
 
       for (const part of partsToProcess) {
+        let chunk;
+
         if (typeof part === 'string') {
-          const u = encoder.encode(part);
-          chunks.push(u);
-          total += u.length;
+          chunk = encoder.encode(part);
         } else if (part instanceof ArrayBuffer) {
-          const u = new Uint8Array(part);
-          chunks.push(u);
-          total += u.byteLength;
+          chunk = new Uint8Array(part);
         } else if (ArrayBuffer.isView(part)) {
-          const view = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
-          chunks.push(view);
-          total += view.byteLength;
+          chunk = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
         } else if (part instanceof Blob) {
-          const buff = await part.arrayBuffer();
-          const u = new Uint8Array(buff);
-          chunks.push(u);
-          total += u.byteLength;
-        } else if (part == null) {
-          // skip
+          const buffer = await part.arrayBuffer();
+          chunk = new Uint8Array(buffer);
+        } else if (part != null) {
+          chunk = encoder.encode(String(part));
         } else {
-          const u = encoder.encode(String(part));
-          chunks.push(u);
-          total += u.length;
+          continue;
         }
+
+        chunks.push(chunk);
+        totalSize += chunk.byteLength;
       }
 
-      const result = new Uint8Array(total);
+      const result = new Uint8Array(totalSize);
       let offset = 0;
-      for (const c of chunks) {
-        result.set(c, offset);
-        offset += c.byteLength;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.byteLength;
       }
 
       return result.buffer;
@@ -346,37 +347,32 @@
     }
 
     slice(start = 0, end = undefined, contentType = '') {
-      // Normalize bounds
       const size = this.size || 0;
-      let relativeStart = start < 0 ? Math.max(size + start, 0) : Math.min(start, size);
-      let relativeEnd = end === undefined ? size : (end < 0 ? Math.max(size + end, 0) : Math.min(end, size));
+      const relativeStart = start < 0 ? Math.max(size + start, 0) : Math.min(start, size);
+      const relativeEnd = end === undefined ? size : (end < 0 ? Math.max(size + end, 0) : Math.min(end, size));
       const span = Math.max(relativeEnd - relativeStart, 0);
 
-      if (span === 0) return new Blob([], { type: contentType });
+      if (span === 0) {
+        return new Blob([], { type: contentType });
+      }
 
-      // Create a single-arrayBuffer and slice it
-      const self = this;
-      const sliced = (async function () {
-        const buffer = await self.arrayBuffer();
-        const u = new Uint8Array(buffer, relativeStart, span);
-        return new Blob([u], { type: contentType });
-      })();
+      const slicePromise = this.arrayBuffer().then(buffer => {
+        const slicedBuffer = new Uint8Array(buffer, relativeStart, span);
+        return new Blob([slicedBuffer], { type: contentType });
+      });
 
-      // Return a Blob that will resolve its data when asked.
-      // For simplicity, return a Blob whose parts include an async placeholder Blob.
-      // The returned Blob should behave synchronously for size/type but arrayBuffer() will work.
+      // Return placeholder blob
       const placeholder = new Blob([], { type: contentType });
-      // store the async part so placeholder.arrayBuffer() will use it
-      placeholder[blobParts] = [{
+      placeholder[SYMBOLS.blobParts] = [{
         __asyncBlob: true,
-        [blobPlaceholderPromise]: sliced
+        [SYMBOLS.blobPlaceholderPromise]: slicePromise
       }];
       placeholder.#setSize(span);
       return placeholder;
     }
   };
 
-  // File extends Blob
+  // File - extends Blob with file metadata
   globalThis.File = class File extends Blob {
     #name;
     #lastModified;
@@ -388,22 +384,20 @@
       this[Symbol.toStringTag] = 'File';
     }
 
-    get name() {
-      return this.#name;
-    }
-
-    get lastModified() {
-      return this.#lastModified;
-    }
+    get name() { return this.#name; }
+    get lastModified() { return this.#lastModified; }
   };
 
-  // XMLHttpRequest implementation
+  // XMLHttpRequest - HTTP request implementation
   globalThis.XMLHttpRequest = class XMLHttpRequest extends EventTarget {
+    // State constants
     static UNSENT = 0;
     static OPENED = 1;
     static HEADERS_RECEIVED = 2;
     static LOADING = 3;
     static DONE = 4;
+
+    // Private fields
     #method = null;
     #url = null;
     #async = true;
@@ -422,18 +416,11 @@
 
     constructor() {
       super();
+      // Public properties
       this.responseType = '';
       this.timeout = 0;
       this.withCredentials = false;
-
-      this.#method = null;
-      this.#url = null;
-      this.#async = true;
-      this.#request = null;
-      this.#requestHeaders = {};
-      this.#response = null;
-      this.#aborted = false;
-
+      // Event handlers
       this.onreadystatechange = null;
       this.onabort = null;
       this.onerror = null;
@@ -444,37 +431,15 @@
       this.ontimeout = null;
     }
 
-    get status() {
-      return this.#status;
-    }
-
-    get statusText() {
-      return this.#statusText;
-    }
-
-    get responseURL() {
-      return this.#responseURL;
-    }
-
-    get readyState() {
-      return this.#readyState;
-    }
-
-    get response() {
-      return this.#responseData;
-    }
-
-    get responseText() {
-      return this.#responseText;
-    }
-
-    get responseXML() {
-      return this.#responseXML;
-    }
-
-    get upload() {
-      return this.#upload;
-    }
+    // Getters
+    get status() { return this.#status; }
+    get statusText() { return this.#statusText; }
+    get responseURL() { return this.#responseURL; }
+    get readyState() { return this.#readyState; }
+    get response() { return this.#responseData; }
+    get responseText() { return this.#responseText; }
+    get responseXML() { return this.#responseXML; }
+    get upload() { return this.#upload; }
 
     open(method, url, async = true, user = null, password = null) {
       this.#method = method.toUpperCase();
@@ -498,72 +463,87 @@
         throw new Error('InvalidStateError: The object is in an invalid state.');
       }
 
-      if (body !== null) {
-        if (body instanceof FormData) {
-          const multipart = body[formDataToMultipart]();
-          this.#request.httpBody = multipart.body;
-          if (!this.#requestHeaders['Content-Type']) {
-            this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
-          }
-        } else if (typeof body === 'string') {
-          this.#request.httpBody = body;
-          if (!this.#requestHeaders['Content-Type']) {
-            this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
-          }
-        } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-          this.#request.httpBody = new Uint8Array(body);
-          if (!this.#requestHeaders['Content-Type']) {
-            this.setRequestHeader('Content-Type', 'application/octet-stream');
-          }
-        }
-      }
-
+      this.#setRequestBody(body);
       this.#setReadyState(XMLHttpRequest.LOADING);
       this.#dispatchEvent('loadstart');
 
       const session = __APPLE_SPEC__.URLSession.shared();
       const promise = session.dataTaskWithRequestCompletionHandler(this.#request, null);
 
-      promise.then((result) => {
-        if (this.#aborted) return;
+      promise
+        .then(result => this.#handleResponse(result))
+        .catch(error => this.#handleError(error));
+    }
 
-        this.#response = result.response;
-        this.#status = result.response.statusCode;
-        this.#statusText = this.#getStatusText(this.#status);
-        this.#responseURL = result.response.url || this.#url;
+    #setRequestBody(body) {
+      if (!body) return;
 
-        // Set response based on responseType
-        const data = result.data;
-        if (this.responseType === '' || this.responseType === 'text') {
+      if (body instanceof FormData) {
+        const multipart = body[SYMBOLS.formDataToMultipart]();
+        this.#request.httpBody = multipart.body;
+        if (!this.#requestHeaders['Content-Type']) {
+          this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
+        }
+      } else if (typeof body === 'string') {
+        this.#request.httpBody = body;
+        if (!this.#requestHeaders['Content-Type']) {
+          this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
+        }
+      } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+        this.#request.httpBody = new Uint8Array(body);
+        if (!this.#requestHeaders['Content-Type']) {
+          this.setRequestHeader('Content-Type', 'application/octet-stream');
+        }
+      }
+    }
+
+    #handleResponse(result) {
+      if (this.#aborted) return;
+
+      this.#response = result.response;
+      this.#status = result.response.statusCode;
+      this.#statusText = this.#getStatusText(this.#status);
+      this.#responseURL = result.response.url || this.#url;
+
+      this.#setResponseData(result.data);
+      this.#setReadyState(XMLHttpRequest.DONE);
+      this.#dispatchEvent('load');
+      this.#dispatchEvent('loadend');
+    }
+
+    #handleError(error) {
+      if (this.#aborted) return;
+
+      this.#setReadyState(XMLHttpRequest.DONE);
+      this.#dispatchEvent('error');
+      this.#dispatchEvent('loadend');
+    }
+
+    #setResponseData(data) {
+      switch (this.responseType) {
+        case '':
+        case 'text':
           this.#responseText = new TextDecoder().decode(data);
           this.#responseData = this.#responseText;
-        } else if (this.responseType === 'arraybuffer') {
+          break;
+        case 'arraybuffer':
           this.#responseData = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
           this.#responseText = '';
-        } else if (this.responseType === 'blob') {
+          break;
+        case 'blob':
           this.#responseData = new Blob([data]);
           this.#responseText = '';
-        } else if (this.responseType === 'json') {
+          break;
+        case 'json':
           try {
             const text = new TextDecoder().decode(data);
             this.#responseData = JSON.parse(text);
-            this.#responseText = '';
           } catch (e) {
             this.#responseData = null;
-            this.#responseText = '';
           }
-        }
-
-        this.#setReadyState(XMLHttpRequest.DONE);
-        this.#dispatchEvent('load');
-        this.#dispatchEvent('loadend');
-      }).catch((error) => {
-        if (this.#aborted) return;
-
-        this.#setReadyState(XMLHttpRequest.DONE);
-        this.#dispatchEvent('error');
-        this.#dispatchEvent('loadend');
-      });
+          this.#responseText = '';
+          break;
+      }
     }
 
     abort() {
@@ -587,11 +567,13 @@
         return '';
       }
       const headers = this.#response.allHeaderFields;
-      return Object.keys(headers).map(key => `${key}: ${headers[key]}`).join('\r\n') + '\r\n';
+      return Object.keys(headers)
+        .map(key => `${key}: ${headers[key]}`)
+        .join('\r\n') + '\r\n';
     }
 
     overrideMimeType(mime) {
-      // Not implemented for now
+      // Not implemented
     }
 
     #setReadyState(state) {
@@ -621,77 +603,79 @@
     }
   };
 
-  // Headers implementation
+  // Headers - HTTP headers implementation
   globalThis.Headers = class Headers {
     constructor(init) {
-      this[headersMap] = new Map();
+      this[SYMBOLS.headersMap] = new Map();
+
       if (init) {
-        if (init instanceof Headers) {
-          for (const [key, value] of init[headersMap]) {
-            this[headersMap].set(key.toLowerCase(), value);
-          }
-        } else if (Array.isArray(init)) {
-          for (const [key, value] of init) {
-            this[headersMap].set(key.toLowerCase(), String(value));
-          }
-        } else if (typeof init === 'object') {
-          for (const [key, value] of Object.entries(init)) {
-            this[headersMap].set(key.toLowerCase(), String(value));
-          }
+        this.#initializeHeaders(init);
+      }
+    }
+
+    #initializeHeaders(init) {
+      if (init instanceof Headers) {
+        for (const [key, value] of init[SYMBOLS.headersMap]) {
+          this[SYMBOLS.headersMap].set(key.toLowerCase(), value);
+        }
+      } else if (Array.isArray(init)) {
+        for (const [key, value] of init) {
+          this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
+        }
+      } else if (typeof init === 'object') {
+        for (const [key, value] of Object.entries(init)) {
+          this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
         }
       }
     }
 
     append(name, value) {
       const normalizedName = name.toLowerCase();
-      const existing = this[headersMap].get(normalizedName);
-      if (existing) {
-        this[headersMap].set(normalizedName, `${existing}, ${value}`);
-      } else {
-        this[headersMap].set(normalizedName, String(value));
-      }
+      const existing = this[SYMBOLS.headersMap].get(normalizedName);
+      const newValue = existing ? `${existing}, ${value}` : String(value);
+      this[SYMBOLS.headersMap].set(normalizedName, newValue);
     }
 
     delete(name) {
-      this[headersMap].delete(name.toLowerCase());
+      this[SYMBOLS.headersMap].delete(name.toLowerCase());
+    }
+
+    get(name) {
+      return this[SYMBOLS.headersMap].get(name.toLowerCase()) || null;
+    }
+
+    has(name) {
+      return this[SYMBOLS.headersMap].has(name.toLowerCase());
+    }
+
+    set(name, value) {
+      this[SYMBOLS.headersMap].set(name.toLowerCase(), String(value));
     }
 
     entries() {
-      return this[headersMap].entries();
+      return this[SYMBOLS.headersMap].entries();
+    }
+
+    keys() {
+      return this[SYMBOLS.headersMap].keys();
+    }
+
+    values() {
+      return this[SYMBOLS.headersMap].values();
     }
 
     forEach(callback, thisArg) {
-      for (const [key, value] of this[headersMap]) {
+      for (const [key, value] of this[SYMBOLS.headersMap]) {
         callback.call(thisArg, value, key, this);
       }
     }
 
-    get(name) {
-      return this[headersMap].get(name.toLowerCase()) || null;
-    }
-
-    has(name) {
-      return this[headersMap].has(name.toLowerCase());
-    }
-
-    keys() {
-      return this[headersMap].keys();
-    }
-
-    set(name, value) {
-      this[headersMap].set(name.toLowerCase(), String(value));
-    }
-
-    values() {
-      return this[headersMap].values();
-    }
-
     [Symbol.iterator]() {
-      return this[headersMap][Symbol.iterator]();
+      return this[SYMBOLS.headersMap][Symbol.iterator]();
     }
   };
 
-  // Request implementation  
+  // Request - HTTP request representation
   globalThis.Request = class Request {
     #url;
     #method;
@@ -703,80 +687,55 @@
     #redirect;
     #referrer;
     #integrity;
-    #bodyUsed;
+    #bodyUsed = false;
 
     constructor(input, init = {}) {
       if (input instanceof Request) {
-        this.#url = input.url;
-        this.#method = input.method;
-        this.#headers = new Headers(input.headers);
-        this.#body = input.body;
-        this.#mode = input.mode;
-        this.#credentials = input.credentials;
-        this.#cache = input.cache;
-        this.#redirect = input.redirect;
-        this.#referrer = input.referrer;
-        this.#integrity = input.integrity;
+        this.#copyFromRequest(input);
       } else {
-        this.#url = String(input);
-        this.#method = (init.method || 'GET').toUpperCase();
-        this.#headers = new Headers(init.headers);
-        this.#body = init.body || null;
-        this.#mode = init.mode || 'cors';
-        this.#credentials = init.credentials || 'same-origin';
-        this.#cache = init.cache || 'default';
-        this.#redirect = init.redirect || 'follow';
-        this.#referrer = init.referrer || 'about:client';
-        this.#integrity = init.integrity || '';
+        this.#initializeFromUrl(String(input), init);
       }
-
-      this.#bodyUsed = false;
-      this[requestBodyText] = null;
+      this[SYMBOLS.requestBodyText] = null;
     }
 
-    get url() {
-      return this.#url;
+    #copyFromRequest(request) {
+      this.#url = request.url;
+      this.#method = request.method;
+      this.#headers = new Headers(request.headers);
+      this.#body = request.body;
+      this.#mode = request.mode;
+      this.#credentials = request.credentials;
+      this.#cache = request.cache;
+      this.#redirect = request.redirect;
+      this.#referrer = request.referrer;
+      this.#integrity = request.integrity;
     }
 
-    get method() {
-      return this.#method;
+    #initializeFromUrl(url, init) {
+      this.#url = url;
+      this.#method = (init.method || 'GET').toUpperCase();
+      this.#headers = new Headers(init.headers);
+      this.#body = init.body || null;
+      this.#mode = init.mode || 'cors';
+      this.#credentials = init.credentials || 'same-origin';
+      this.#cache = init.cache || 'default';
+      this.#redirect = init.redirect || 'follow';
+      this.#referrer = init.referrer || 'about:client';
+      this.#integrity = init.integrity || '';
     }
 
-    get headers() {
-      return this.#headers;
-    }
-
-    get body() {
-      return this.#body;
-    }
-
-    get mode() {
-      return this.#mode;
-    }
-
-    get credentials() {
-      return this.#credentials;
-    }
-
-    get cache() {
-      return this.#cache;
-    }
-
-    get redirect() {
-      return this.#redirect;
-    }
-
-    get referrer() {
-      return this.#referrer;
-    }
-
-    get integrity() {
-      return this.#integrity;
-    }
-
-    get bodyUsed() {
-      return this.#bodyUsed;
-    }
+    // Getters
+    get url() { return this.#url; }
+    get method() { return this.#method; }
+    get headers() { return this.#headers; }
+    get body() { return this.#body; }
+    get mode() { return this.#mode; }
+    get credentials() { return this.#credentials; }
+    get cache() { return this.#cache; }
+    get redirect() { return this.#redirect; }
+    get referrer() { return this.#referrer; }
+    get integrity() { return this.#integrity; }
+    get bodyUsed() { return this.#bodyUsed; }
 
     #setBodyUsed() {
       this.#bodyUsed = true;
@@ -798,7 +757,7 @@
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body[formDataToMultipart]();
+        const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -829,7 +788,7 @@
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
       if (this.body instanceof FormData) {
-        const multipart = this.body[formDataToMultipart]();
+        const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return multipart.body;
       }
 
@@ -946,7 +905,7 @@
         return this.body.buffer.slice(this.body.byteOffset, this.body.byteOffset + this.body.byteLength);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[formDataToMultipart]();
+        const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
       if (typeof this.body === 'string') {
@@ -977,7 +936,7 @@
         return new TextDecoder().decode(this.body);
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[formDataToMultipart]();
+        const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return multipart.body;
       }
 
@@ -986,10 +945,9 @@
     }
   };
 
-  // fetch implementation
+  // fetch - HTTP request function
   globalThis.fetch = async function fetch(input, init = {}) {
     const request = new Request(input, init);
-
     const urlRequest = new __APPLE_SPEC__.URLRequest(request.url);
     urlRequest.httpMethod = request.method;
 
@@ -999,12 +957,14 @@
     }
 
     // Set body
-    // Set body
     if (request.body) {
       if (request.body instanceof FormData) {
-        const multipart = request.body[formDataToMultipart]();
+        const multipart = request.body[SYMBOLS.formDataToMultipart]();
         urlRequest.httpBody = multipart.body;
-        urlRequest.setValueForHTTPHeaderField(`multipart/form-data; boundary=${multipart.boundary}`, 'Content-Type');
+        urlRequest.setValueForHTTPHeaderField(
+          `multipart/form-data; boundary=${multipart.boundary}`,
+          'Content-Type'
+        );
       } else if (typeof request.body === 'string') {
         urlRequest.httpBody = request.body;
       } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
@@ -1015,69 +975,104 @@
     const session = __APPLE_SPEC__.URLSession.shared();
     const result = await session.dataTaskWithRequestCompletionHandler(urlRequest, null);
 
-    const response = new Response(result.data, {
+    return new Response(result.data, {
       status: result.response.statusCode,
       statusText: '',
       headers: result.response.allHeaderFields,
       url: result.response.url || request.url
     });
-
-    return response;
   };
 
-  // FormData implementation (internals hidden via module-scoped Symbols)
+  // FormData - form data representation
   globalThis.FormData = class FormData {
     constructor(form) {
-      this[formDataData] = new Map();
+      this[SYMBOLS.formDataData] = new Map();
     }
 
     append(name, value, filename) {
       const key = String(name);
-
-      if (!this[formDataData].has(key)) {
-        this[formDataData].set(key, []);
+      if (!this[SYMBOLS.formDataData].has(key)) {
+        this[SYMBOLS.formDataData].set(key, []);
       }
 
-      if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'File') {
-        // Handle File objects
-        this[formDataData].get(key).push({
-          type: 'file',
-          value: value,
-          filename: filename || value.name || 'blob'
-        });
-      } else if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Blob') {
-        // Handle Blob objects
-        this[formDataData].get(key).push({
-          type: 'blob',
-          value: value,
-          filename: filename || 'blob'
-        });
-      } else {
-        // Handle string values
-        this[formDataData].get(key).push({
-          type: 'string',
-          value: String(value),
-          filename: null
-        });
+      const item = this.#createFormDataItem(value, filename);
+      this[SYMBOLS.formDataData].get(key).push(item);
+    }
+
+    #createFormDataItem(value, filename) {
+      if (value && typeof value === 'object') {
+        if (value.constructor?.name === 'File') {
+          return {
+            type: 'file',
+            value: value,
+            filename: filename || value.name || 'blob'
+          };
+        } else if (value.constructor?.name === 'Blob') {
+          return {
+            type: 'blob',
+            value: value,
+            filename: filename || 'blob'
+          };
+        }
       }
+      return {
+        type: 'string',
+        value: String(value),
+        filename: null
+      };
     }
 
     delete(name) {
-      this[formDataData].delete(String(name));
+      this[SYMBOLS.formDataData].delete(String(name));
+    }
+
+    get(name) {
+      const values = this[SYMBOLS.formDataData].get(String(name));
+      return values?.length > 0 ? values[0].value : null;
+    }
+
+    getAll(name) {
+      const values = this[SYMBOLS.formDataData].get(String(name));
+      return values ? values.map(item => item.value) : [];
+    }
+
+    has(name) {
+      return this[SYMBOLS.formDataData].has(String(name));
+    }
+
+    set(name, value, filename) {
+      const key = String(name);
+      this[SYMBOLS.formDataData].delete(key);
+      this.append(key, value, filename);
     }
 
     entries() {
       const entries = [];
-      for (const [key, values] of this[formDataData]) {
+      for (const [key, values] of this[SYMBOLS.formDataData]) {
         for (const item of values) {
-          if (item.type === 'file' || item.type === 'blob') {
-            entries.push([key, item.value, item.filename]);
-          } else {
-            entries.push([key, item.value]);
-          }
+          const entry = item.type === 'file' || item.type === 'blob'
+            ? [key, item.value, item.filename]
+            : [key, item.value];
+          entries.push(entry);
         }
       }
       return entries[Symbol.iterator]();
+    }
+
+    keys() {
+      const keys = [];
+      for (const [key, values] of this[SYMBOLS.formDataData]) {
+        keys.push(...Array(values.length).fill(key));
+      }
+      return keys[Symbol.iterator]();
+    }
+
+    values() {
+      const values = [];
+      for (const [, items] of this[SYMBOLS.formDataData]) {
+        values.push(...items.map(item => item.value));
+      }
+      return values[Symbol.iterator]();
     }
 
     forEach(callback, thisArg) {
@@ -1086,83 +1081,26 @@
       }
     }
 
-    get(name) {
-      const values = this[formDataData].get(String(name));
-      if (!values || values.length === 0) {
-        return null;
-      }
-      return values[0].value;
-    }
-
-    getAll(name) {
-      const values = this[formDataData].get(String(name));
-      if (!values) {
-        return [];
-      }
-      return values.map(item => item.value);
-    }
-
-    has(name) {
-      return this[formDataData].has(String(name));
-    }
-
-    keys() {
-      const keys = [];
-      for (const [key, values] of this[formDataData]) {
-        for (let i = 0; i < values.length; i++) {
-          keys.push(key);
-        }
-      }
-      return keys[Symbol.iterator]();
-    }
-
-    set(name, value, filename) {
-      const key = String(name);
-      this[formDataData].delete(key);
-      this.append(key, value, filename);
-    }
-
-    values() {
-      const values = [];
-      for (const [key, items] of this[formDataData]) {
-        for (const item of items) {
-          values.push(item.value);
-        }
-      }
-      return values[Symbol.iterator]();
-    }
-
     [Symbol.iterator]() {
       return this.entries();
     }
 
-    // (multipart helper implemented via symbol method below)
-
-    // Convert FormData to URL-encoded string
-    [formDataToURLEncoded]() {
+    [SYMBOLS.formDataToURLEncoded]() {
       const params = [];
-      for (const [key, values] of this[formDataData]) {
+      for (const [key, values] of this[SYMBOLS.formDataData]) {
         for (const item of values) {
-          if (item.type === 'string') {
-            params.push(encodeURIComponent(key) + '=' + encodeURIComponent(item.value));
-          } else {
-            // Files and blobs are typically not supported in URL-encoded format
-            params.push(encodeURIComponent(key) + '=' + encodeURIComponent('[Object]'));
-          }
+          const paramValue = item.type === 'string' ? item.value : '[Object]';
+          params.push(`${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}`);
         }
       }
-
       return params.join('&');
     }
 
-    // expose the multipart helper via symbol to keep module-local privacy
-    [formDataToMultipart]() {
-      // Use the native Apple-provided crypto UUID directly (no redundant fallbacks)
+    [SYMBOLS.formDataToMultipart]() {
       const boundary = '----SwiftJSFormBoundary-' + crypto.randomUUID();
-
       let result = '';
 
-      for (const [key, values] of this[formDataData]) {
+      for (const [key, values] of this[SYMBOLS.formDataData]) {
         for (const item of values) {
           result += `--${boundary}\r\n`;
 
@@ -1171,12 +1109,7 @@
             const contentType = item.value.type || 'application/octet-stream';
             result += `Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`;
             result += `Content-Type: ${contentType}\r\n\r\n`;
-
-            if (item.value.arrayBuffer) {
-              result += '[Binary Data]\r\n';
-            } else {
-              result += String(item.value) + '\r\n';
-            }
+            result += item.value.arrayBuffer ? '[Binary Data]\r\n' : String(item.value) + '\r\n';
           } else {
             result += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
             result += item.value + '\r\n';
@@ -1185,7 +1118,6 @@
       }
 
       result += `--${boundary}--\r\n`;
-
       return { boundary, body: result };
     }
   };
@@ -1202,8 +1134,8 @@
     constructor(stream, underlyingSource) {
       this.#stream = stream;
       // ensure per-stream internal storage exists
-      if (!stream[streamInternal]) stream[streamInternal] = {};
-      this.#internal = stream[streamInternal];
+      if (!stream[SYMBOLS.streamInternal]) stream[SYMBOLS.streamInternal] = {};
+      this.#internal = stream[SYMBOLS.streamInternal];
       this.#internal.underlyingSource = underlyingSource || {};
     }
 
@@ -1240,7 +1172,7 @@
   globalThis.ReadableStream = class ReadableStream {
     constructor(underlyingSource = {}, strategy) {
       // Per-instance internal storage
-      this[streamInternal] = {
+      this[SYMBOLS.streamInternal] = {
         underlyingSource: underlyingSource,
         strategy: strategy || {},
         queue: [],
@@ -1252,7 +1184,7 @@
 
       // create controller and store reference
       const controller = new ReadableStreamDefaultController(this, underlyingSource);
-      this[streamInternal].controller = controller;
+      this[SYMBOLS.streamInternal].controller = controller;
 
       if (underlyingSource.start) {
         try { underlyingSource.start(controller); } catch (e) { controller.error(e); }
@@ -1266,7 +1198,7 @@
         constructor() { this.#released = false; }
 
         read() {
-          const s = stream[streamInternal];
+          const s = stream[SYMBOLS.streamInternal];
           if (s.state === 'errored') return Promise.reject(s.storedError);
           if (s.queue.length > 0) {
             const value = s.queue.shift();
@@ -1281,7 +1213,7 @@
         releaseLock() { this.#released = true; }
 
         cancel(reason) {
-          const s = stream[streamInternal];
+          const s = stream[SYMBOLS.streamInternal];
           s.readRequests.forEach(r => r.reject(reason));
           s.readRequests = [];
           if (s.underlyingSource && s.underlyingSource.cancel) {
@@ -1298,8 +1230,8 @@
     #internal;
     constructor(stream, underlyingSink) {
       this.#stream = stream;
-      if (!stream[streamInternal]) stream[streamInternal] = {};
-      this.#internal = stream[streamInternal];
+      if (!stream[SYMBOLS.streamInternal]) stream[SYMBOLS.streamInternal] = {};
+      this.#internal = stream[SYMBOLS.streamInternal];
       this.#internal.underlyingSink = underlyingSink || {};
     }
 
@@ -1312,7 +1244,7 @@
   globalThis.WritableStream = class WritableStream {
     constructor(underlyingSink = {}, strategy) {
       // per-instance internal storage
-      this[streamInternal] = {
+      this[SYMBOLS.streamInternal] = {
         underlyingSink: underlyingSink,
         strategy: strategy || {},
         state: 'writable',
@@ -1323,14 +1255,14 @@
       };
 
       const controller = new WritableStreamDefaultController(this, underlyingSink);
-      this[streamInternal].controller = controller;
+      this[SYMBOLS.streamInternal].controller = controller;
     }
 
     getWriter() {
       const stream = this;
       return new (class WritableStreamDefaultWriter {
         write(chunk) {
-          const s = stream[streamInternal];
+          const s = stream[SYMBOLS.streamInternal];
           if (s.state === 'errored') return Promise.reject(s.storedError);
           if (s.state === 'closed') return Promise.reject(new TypeError('Cannot write to closed stream'));
           const promise = new Promise((resolve, reject) => {
@@ -1364,7 +1296,7 @@
         }
 
         close() {
-          const s = stream[streamInternal];
+          const s = stream[SYMBOLS.streamInternal];
           if (s.state === 'errored') return Promise.reject(s.storedError);
           if (s.underlyingSink && s.underlyingSink.close) {
             try { const r = s.underlyingSink.close(); s.state = 'closed'; return Promise.resolve(r); } catch (e) { s.controller.error(e); return Promise.reject(e); }
@@ -1374,7 +1306,7 @@
         }
 
         abort(reason) {
-          const s = stream[streamInternal];
+          const s = stream[SYMBOLS.streamInternal];
           if (s.underlyingSink && s.underlyingSink.abort) {
             try { return Promise.resolve(s.underlyingSink.abort(reason)); } catch (e) { return Promise.reject(e); }
           }
@@ -1389,7 +1321,7 @@
   globalThis.TransformStream = class TransformStream {
     constructor(transformer = {}, writableStrategy, readableStrategy) {
       // per-instance internals
-      this[streamInternal] = {
+      this[SYMBOLS.streamInternal] = {
         transformer: transformer,
         writable: null,
         readable: null,
@@ -1401,46 +1333,54 @@
 
       const readable = new ReadableStream({
         start(controller) {
-          ts[streamInternal].readableController = controller;
+          ts[SYMBOLS.streamInternal].readableController = controller;
         },
         transform(chunk, controller) {
           try {
             if (transformer.transform) {
-              const result = transformer.transform(chunk, ts[streamInternal].readableController);
+              const result = transformer.transform(chunk, ts[SYMBOLS.streamInternal].readableController);
               return Promise.resolve(result);
             }
-            ts[streamInternal].readableController.enqueue(chunk);
+            ts[SYMBOLS.streamInternal].readableController.enqueue(chunk);
             return Promise.resolve();
-          } catch (e) { ts[streamInternal].readableController.error(e); return Promise.reject(e); }
+          } catch (e) {
+            ts[SYMBOLS.streamInternal].readableController.error(e);
+            return Promise.reject(e);
+          }
         },
         flush(controller) {
-          if (transformer.flush) return transformer.flush(ts[streamInternal].readableController);
+          if (transformer.flush) {
+            return transformer.flush(ts[SYMBOLS.streamInternal].readableController);
+          }
         }
       }, readableStrategy);
 
       const writable = new WritableStream({
         start(controller) {
-          ts[streamInternal].writableController = controller;
+          ts[SYMBOLS.streamInternal].writableController = controller;
         },
         write(chunk) {
           try {
             if (transformer.transform) {
-              const result = transformer.transform(chunk, ts[streamInternal].readableController);
+              const result = transformer.transform(chunk, ts[SYMBOLS.streamInternal].readableController);
               return Promise.resolve(result);
             }
-            ts[streamInternal].readableController.enqueue(chunk);
+            ts[SYMBOLS.streamInternal].readableController.enqueue(chunk);
             return Promise.resolve();
-          } catch (e) { ts[streamInternal].readableController.error(e); return Promise.reject(e); }
+          } catch (e) {
+            ts[SYMBOLS.streamInternal].readableController.error(e);
+            return Promise.reject(e);
+          }
         },
-        close() { ts[streamInternal].readableController.close(); },
-        abort(reason) { ts[streamInternal].readableController.error(reason); }
+        close() { ts[SYMBOLS.streamInternal].readableController.close(); },
+        abort(reason) { ts[SYMBOLS.streamInternal].readableController.error(reason); }
       }, writableStrategy);
 
-      this[streamInternal].readable = readable;
-      this[streamInternal].writable = writable;
+      this[SYMBOLS.streamInternal].readable = readable;
+      this[SYMBOLS.streamInternal].writable = writable;
     }
 
-    get readable() { return this[streamInternal].readable; }
-    get writable() { return this[streamInternal].writable; }
+    get readable() { return this[SYMBOLS.streamInternal].readable; }
+    get writable() { return this[SYMBOLS.streamInternal].writable; }
   }
 })();
