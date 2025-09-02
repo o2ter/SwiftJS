@@ -47,7 +47,7 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto")
             ],
             resources: [
-                .copy("resources/polyfill.js")
+                .embedInCode("resources/polyfill.js")
             ]
         ),
         .testTarget(
@@ -58,12 +58,7 @@ let package = Package(
             name: "SwiftJSDemo",
             dependencies: ["SwiftJS"],
             resources: [
-                .copy("resources/corejs.js"),
-                .copy("resources/script_1.js"),
-                .copy("resources/script_2.js"),
-                .copy("resources/http_test.js"),
-                .copy("resources/debug_methods.js"),
-                .copy("resources/demo.js")
+                .copy("resources")
             ]
         ),
     ]

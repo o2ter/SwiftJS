@@ -29,143 +29,113 @@ import XCTest
 @MainActor
 final class SwiftJSTests: XCTestCase {
     
-    // Each test creates its own SwiftJS context to avoid shared state
+    // Integration tests that verify the complete SwiftJS system works together
+    // Individual component tests are in specialized files:
+    // - CoreTests.swift: Core engine functionality
+    // - WebAPIsTests.swift: Web API implementations
+    // - NativeAPIsTests.swift: Native Swift APIs
+    // - NetworkingTests.swift: HTTP/networking functionality
+    // - FormDataTests.swift: FormData API
+    // - PerformanceTests.swift: Performance benchmarks
     
-    // MARK: - Core SwiftJS Tests
+    // MARK: - Integration Tests
     
-    func testSwiftJSCreation() {
-        let context = SwiftJS()
-        XCTAssertNotNil(context)
-        XCTAssertNotNil(context.globalObject)
-    }
-    
-    func testBasicJavaScriptExecution() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("2 + 3")
-        XCTAssertEqual(result.numberValue, 5.0)
-    }
-    
-    func testGlobalObjectsExist() {
-        // Test that our polyfill objects are available
+    func testCompletePolyfillIntegration() {
+        // Test that all polyfilled APIs are available and working together
         let context = SwiftJS()
         let globals = context.evaluateScript("Object.getOwnPropertyNames(globalThis)")
-        XCTAssertTrue(globals.toString().contains("console"))
-        XCTAssertTrue(globals.toString().contains("setTimeout"))
-        XCTAssertTrue(globals.toString().contains("clearTimeout"))
-        XCTAssertTrue(globals.toString().contains("setInterval"))
-        XCTAssertTrue(globals.toString().contains("clearInterval"))
-        // Network APIs are tested in NetworkingTests.swift
-        XCTAssertTrue(globals.toString().contains("XMLHttpRequest"))
-        XCTAssertTrue(globals.toString().contains("fetch"))
-        XCTAssertTrue(globals.toString().contains("Headers"))
-        XCTAssertTrue(globals.toString().contains("Request"))
-        XCTAssertTrue(globals.toString().contains("Response"))
-    }
-    
-    // MARK: - Event System Tests
-    
-    func testEventTargetInstantiation() {
-        let script = """
-            const target = new EventTarget();
-            target instanceof EventTarget
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertTrue(result.boolValue ?? false)
-    }
-    
-    func testEventListeners() {
-        let script = """
-            const target = new EventTarget();
-            let fired = false;
-            target.addEventListener('test', () => { fired = true; });
-            target.dispatchEvent(new Event('test'));
-            fired
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertTrue(result.boolValue ?? false)
-    }
-    
-    // MARK: - Text Encoding Tests
+        let globalsList = globals.toString()
 
-    func testTextEncoder() {
+        // Core Web APIs
+        XCTAssertTrue(globalsList.contains("console"))
+        XCTAssertTrue(globalsList.contains("setTimeout"))
+        XCTAssertTrue(globalsList.contains("clearTimeout"))
+        XCTAssertTrue(globalsList.contains("setInterval"))
+        XCTAssertTrue(globalsList.contains("clearInterval"))
+
+        // Networking APIs
+        XCTAssertTrue(globalsList.contains("XMLHttpRequest"))
+        XCTAssertTrue(globalsList.contains("fetch"))
+        XCTAssertTrue(globalsList.contains("Headers"))
+        XCTAssertTrue(globalsList.contains("Request"))
+        XCTAssertTrue(globalsList.contains("Response"))
+        XCTAssertTrue(globalsList.contains("FormData"))
+
+        // Text APIs
+        XCTAssertTrue(globalsList.contains("TextEncoder"))
+        XCTAssertTrue(globalsList.contains("TextDecoder"))
+
+        // Event APIs
+        XCTAssertTrue(globalsList.contains("EventTarget"))
+        XCTAssertTrue(globalsList.contains("Event"))
+
+        // Crypto APIs
+        XCTAssertTrue(globalsList.contains("crypto"))
+
+        // Process APIs
+        XCTAssertTrue(globalsList.contains("process"))
+    }
+    
+    func testCrossAPIIntegration() {
+        // Test that different API categories work together
         let script = """
+            // Combine multiple APIs in a single operation
             const encoder = new TextEncoder();
-            const encoded = encoder.encode('Hello, 世界!');
-            encoded instanceof Uint8Array
+            const data = encoder.encode('test data');
+            
+            const formData = new FormData();
+            formData.append('data', 'test');
+            
+            const event = new Event('test');
+            const target = new EventTarget();
+            
+            const uuid = crypto.randomUUID();
+            const pid = process.pid;
+            
+            // Verify all operations succeeded
+            data instanceof Uint8Array &&
+            formData.has('data') &&
+            event instanceof Event &&
+            target instanceof EventTarget &&
+            typeof uuid === 'string' &&
+            typeof pid === 'number'
         """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
         XCTAssertTrue(result.boolValue ?? false)
     }
     
-    func testTextDecoder() {
+    func testNativeSwiftBridgeIntegration() {
+        // Test that Swift native APIs integrate properly with JavaScript polyfills
         let script = """
-            const decoder = new TextDecoder();
-            const encoder = new TextEncoder();
-            const encoded = encoder.encode('Hello, SwiftJS!');
-            const decoded = decoder.decode(encoded);
-            decoded
+            // Use both polyfilled and native APIs together
+            const polyfillUUID = crypto.randomUUID();
+            const nativeUUID = __APPLE_SPEC__.crypto.randomUUID();
+            const processId = __APPLE_SPEC__.processInfo.processIdentifier;
+            const deviceId = __APPLE_SPEC__.deviceInfo.identifier;
+            
+            typeof polyfillUUID === 'string' &&
+            typeof nativeUUID === 'string' &&
+            typeof processId === 'number' &&
+            typeof deviceId === 'string' &&
+            polyfillUUID !== nativeUUID  // They should be different UUIDs
             """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
-        XCTAssertEqual(result.toString(), "Hello, SwiftJS!")
-    }
-
-    // MARK: - Timer Tests
-    
-    func testSetTimeoutExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof setTimeout")
-        XCTAssertEqual(result.toString(), "function")
+        XCTAssertTrue(result.boolValue ?? false)
     }
     
-    func testSetIntervalExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof setInterval")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testClearTimeoutExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof clearTimeout")
-        XCTAssertEqual(result.toString(), "function")
-    }
-
-    func testClearIntervalExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof clearInterval")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    // MARK: - Console Tests
-
-    func testConsoleExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof console")
-        XCTAssertEqual(result.toString(), "object")
-    }
-    
-    func testConsoleLog() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof console.log")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    // MARK: - Promise Tests
-
-    func testPromiseExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof Promise")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testPromiseCreation() {
+    func testAsyncIntegration() {
+        // Test that async operations work with the polyfill system
         let script = """
-            const promise = new Promise((resolve, reject) => {
-                resolve('test');
+            // Test Promise integration with polyfilled APIs
+            const promise = new Promise((resolve) => {
+                setTimeout(() => {
+                    const uuid = crypto.randomUUID();
+                    resolve(uuid);
+                }, 1);
             });
+            
             promise instanceof Promise
         """
         let context = SwiftJS()
@@ -173,124 +143,61 @@ final class SwiftJSTests: XCTestCase {
         XCTAssertTrue(result.boolValue ?? false)
     }
     
-    // MARK: - Crypto API Tests
-    
-    func testCryptoExists() {
+    func testCompleteSystemBootstrap() {
+        // Test that a fresh SwiftJS context has everything needed
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof crypto")
-        XCTAssertEqual(result.toString(), "object")
-    }
-    
-    func testCryptoRandomUUID() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof crypto.randomUUID")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testCryptoGetRandomValues() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof crypto.getRandomValues")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    // MARK: - Process Info Tests
+        
+        // Verify core JavaScript features
+        XCTAssertEqual(context.evaluateScript("2 + 3").numberValue, 5.0)
+        XCTAssertEqual(context.evaluateScript("typeof Promise").toString(), "function")
 
-    func testProcessExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof process")
-        XCTAssertEqual(result.toString(), "object")
-    }
+        // Verify polyfilled APIs are available
+        XCTAssertEqual(context.evaluateScript("typeof console").toString(), "object")
+        XCTAssertEqual(context.evaluateScript("typeof fetch").toString(), "function")
+        XCTAssertEqual(context.evaluateScript("typeof crypto").toString(), "object")
 
-    func testProcessPid() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof process.pid")
-        XCTAssertEqual(result.toString(), "number")
-    }
-    
-    // MARK: - Global Native API Tests
+        // Verify native APIs are available
+        XCTAssertEqual(context.evaluateScript("typeof __APPLE_SPEC__").toString(), "object")
+        XCTAssertEqual(context.evaluateScript("typeof process").toString(), "object")
 
-    func testAppleSpecExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__")
-        XCTAssertEqual(result.toString(), "object")
-    }
-
-    func testAppleSpecCrypto() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.crypto")
-        XCTAssertEqual(result.toString(), "object")
-    }
-    
-    func testAppleSpecProcessInfo() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.processInfo")
-        XCTAssertEqual(result.toString(), "object")
-    }
-    
-    // MARK: - Bridge Performance Tests
-    
-    func testSwiftJavaScriptBridgeBasic() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("__APPLE_SPEC__.processInfo.processIdentifier")
-        XCTAssertTrue((result.numberValue ?? 0) > 0)
-    }
-    
-    // MARK: - Error Handling Tests
-    
-    func testJavaScriptExceptionHandling() {
-        let context = SwiftJS()
-        let result = context.evaluateScript(
+        // Verify error handling works
+        let errorResult = context.evaluateScript(
             """
             try {
-                throw new Error("Test error");
+                throw new Error("test");
             } catch (e) {
                 e.message;
             }
             """)
-        XCTAssertEqual(result.toString(), "Test error")
-    }
-
-    func testUndefinedVariableAccess() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof undefinedVariable")
-        XCTAssertEqual(result.toString(), "undefined")
+        XCTAssertEqual(errorResult.toString(), "test")
     }
     
-    // MARK: - Value Marshaling Tests
+    func testMultiContextIsolation() {
+        // Test that multiple SwiftJS contexts don't interfere with each other
+        let context1 = SwiftJS()
+        let context2 = SwiftJS()
 
-    func testStringMarshaling() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("'Hello, SwiftJS!'")
-        XCTAssertEqual(result.toString(), "Hello, SwiftJS!")
-    }
+        context1.evaluateScript("globalThis.testValue = 'context1'")
+        context2.evaluateScript("globalThis.testValue = 'context2'")
 
-    func testNumberMarshaling() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("42.5")
-        XCTAssertEqual(result.numberValue, 42.5)
+        let result1 = context1.evaluateScript("globalThis.testValue")
+        let result2 = context2.evaluateScript("globalThis.testValue")
+
+        XCTAssertEqual(result1.toString(), "context1")
+        XCTAssertEqual(result2.toString(), "context2")
     }
     
-    func testBooleanMarshaling() {
-        let context = SwiftJS()
-        let trueResult = context.evaluateScript("true")
-        let falseResult = context.evaluateScript("false")
-        XCTAssertTrue(trueResult.boolValue ?? false)
-        XCTAssertFalse(falseResult.boolValue ?? true)
-    }
+    func testPolyfillConsistency() {
+        // Test that polyfills behave consistently across multiple contexts
+        let context1 = SwiftJS()
+        let context2 = SwiftJS()
 
-    func testArrayMarshaling() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("[1, 2, 3, 'test']")
-        XCTAssertEqual(result[0].numberValue, 1)
-        XCTAssertEqual(result[1].numberValue, 2)
-        XCTAssertEqual(result[2].numberValue, 3)
-        XCTAssertEqual(result[3].toString(), "test")
-    }
+        let uuid1 = context1.evaluateScript("crypto.randomUUID()")
+        let uuid2 = context2.evaluateScript("crypto.randomUUID()")
 
-    func testObjectMarshaling() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("({ name: 'SwiftJS', version: 1.0 })")
-        XCTAssertEqual(result["name"].toString(), "SwiftJS")
-        XCTAssertEqual(result["version"].numberValue, 1.0)
+        // Both should be valid UUIDs but different
+        XCTAssertNotEqual(uuid1.toString(), uuid2.toString())
+        XCTAssertTrue(uuid1.toString().count > 30)  // UUID should be long
+        XCTAssertTrue(uuid2.toString().count > 30)
     }
 }

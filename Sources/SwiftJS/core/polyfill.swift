@@ -145,11 +145,8 @@ extension SwiftJS {
             "URLRequest": .init(JSURLRequest.self, in: self),
             "URLResponse": .init(JSURLResponse.self, in: self)
         ]
-        
-        if let polyfillJs = Bundle.module.url(forResource: "polyfill", withExtension: "js"),
-           let content = try? String(contentsOf: polyfillJs, encoding: .utf8)
-        {
-            self.evaluateScript(content, withSourceURL: polyfillJs)
+        if let polyfillJs = String(data: Data(PackageResources.polyfill_js), encoding: .utf8) {
+            self.evaluateScript(polyfillJs)
         }
     }
 }
