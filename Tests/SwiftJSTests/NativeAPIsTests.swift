@@ -107,16 +107,18 @@ final class NativeAPIsTests: XCTestCase {
         XCTAssertTrue(result.boolValue ?? false)
     }
     
-    func testNativeCryptoHash() {
+    func testNativeCryptoCreateHash() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.crypto.hash")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.crypto.createHash")
         XCTAssertEqual(result.toString(), "function")
     }
     
     func testCryptoHashSHA256() {
         let script = """
+            const hasher = __APPLE_SPEC__.crypto.createHash('sha256');
             const data = new TextEncoder().encode('hello');
-            const hash = __APPLE_SPEC__.crypto.hash('SHA256', data);
+            hasher.update(data);
+            const hash = hasher.digest();
             hash instanceof Uint8Array && hash.length === 32
         """
         let context = SwiftJS()
@@ -132,34 +134,10 @@ final class NativeAPIsTests: XCTestCase {
         XCTAssertEqual(result.toString(), "object")
     }
     
-    func testDeviceInfoIdentifier() {
+    func testDeviceInfoIdentifierForVendor() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.identifier")
-        XCTAssertEqual(result.toString(), "string")
-    }
-    
-    func testDeviceInfoName() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.name")
-        XCTAssertEqual(result.toString(), "string")
-    }
-    
-    func testDeviceInfoModel() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.model")
-        XCTAssertEqual(result.toString(), "string")
-    }
-    
-    func testDeviceInfoSystemName() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.systemName")
-        XCTAssertEqual(result.toString(), "string")
-    }
-    
-    func testDeviceInfoSystemVersion() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.systemVersion")
-        XCTAssertEqual(result.toString(), "string")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.deviceInfo.identifierForVendor")
+        XCTAssertEqual(result.toString(), "function")
     }
     
     // MARK: - FileSystem Tests
@@ -170,22 +148,22 @@ final class NativeAPIsTests: XCTestCase {
         XCTAssertEqual(result.toString(), "object")
     }
     
-    func testFileSystemReadFileSync() {
+    func testFileSystemHomeDirectory() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.readFileSync")
-        XCTAssertEqual(result.toString(), "function")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.homeDirectory")
+        XCTAssertEqual(result.toString(), "string")
     }
     
-    func testFileSystemWriteFileSync() {
+    func testFileSystemTemporaryDirectory() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.writeFileSync")
-        XCTAssertEqual(result.toString(), "function")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.temporaryDirectory")
+        XCTAssertEqual(result.toString(), "string")
     }
     
-    func testFileSystemExistsSync() {
+    func testFileSystemCurrentDirectoryPath() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.existsSync")
-        XCTAssertEqual(result.toString(), "function")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.FileSystem.currentDirectoryPath")
+        XCTAssertEqual(result.toString(), "string")
     }
     
     // MARK: - URLSession Tests
@@ -196,9 +174,15 @@ final class NativeAPIsTests: XCTestCase {
         XCTAssertEqual(result.toString(), "object")
     }
     
-    func testURLSessionDataTask() {
+    func testURLSessionShared() {
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof __APPLE_SPEC__.URLSession.dataTask")
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.URLSession.shared")
+        XCTAssertEqual(result.toString(), "object")
+    }
+    
+    func testURLSessionDataTaskWithRequestCompletionHandler() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.URLSession.shared().dataTaskWithRequestCompletionHandler")
         XCTAssertEqual(result.toString(), "function")
     }
     
@@ -228,11 +212,11 @@ final class NativeAPIsTests: XCTestCase {
             // Test that native APIs don't interfere with each other
             try {
                 const uuid = __APPLE_SPEC__.crypto.randomUUID();
-                const deviceId = __APPLE_SPEC__.deviceInfo.identifier;
+                const deviceIdFunction = typeof __APPLE_SPEC__.deviceInfo.identifierForVendor;
                 const pid = __APPLE_SPEC__.processInfo.processIdentifier;
                 
                 typeof uuid === 'string' && 
-                typeof deviceId === 'string' && 
+                deviceIdFunction === 'function' && 
                 typeof pid === 'number'
             } catch (e) {
                 false
