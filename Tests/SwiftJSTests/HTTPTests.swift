@@ -82,24 +82,29 @@ final class HTTPTests: XCTestCase {
                     status: xhr.status,
                     success: xhr.status >= 200 && xhr.status < 300
                 };
+                globalThis.testCompleted();
             };
             xhr.onerror = function() {
                 globalThis.getResult = { error: true };
+                globalThis.testCompleted();
             };
             xhr.send();
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.getResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertTrue(result["success"].boolValue ?? false)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     func testPOSTRequestWithData() {
@@ -126,25 +131,30 @@ final class HTTPTests: XCTestCase {
                 } catch (e) {
                     globalThis.postResult = { parseError: true };
                 }
+                globalThis.testCompleted();
             };
             xhr.onerror = function() {
                 globalThis.postResult = { error: true };
+                globalThis.testCompleted();
             };
             xhr.send(data);
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.postResult")
             XCTAssertFalse(result.isUndefined)
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["dataReceived"].boolValue ?? false)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     func testPUTRequest() {
@@ -163,24 +173,28 @@ final class HTTPTests: XCTestCase {
                     method: data.method,
                     json: data.json
                 };
+                globalThis.testCompleted();
             })
             .catch(error => {
                 globalThis.putResult = { error: error.message };
+                globalThis.testCompleted();
             });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.putResult")
             XCTAssertEqual(result["method"].toString(), "PUT")
             XCTAssertEqual(result["json"]["action"].toString(), "update")
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     func testDELETERequest() {
@@ -201,22 +215,29 @@ final class HTTPTests: XCTestCase {
             })
             .then(data => {
                 globalThis.deleteResult.method = data.method;
+                globalThis.testCompleted();
+            })
+            .catch(error => {
+                globalThis.deleteResult = { error: error.message };
+                globalThis.testCompleted();
             });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.deleteResult")
             XCTAssertEqual(result["status"].numberValue, 200)
             XCTAssertTrue(result["ok"].boolValue ?? false)
             XCTAssertEqual(result["method"].toString(), "DELETE")
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Header Tests
@@ -240,22 +261,29 @@ final class HTTPTests: XCTestCase {
                     userAgent: data.headers['User-Agent'],
                     accept: data.headers['Accept']
                 };
+                globalThis.testCompleted();
+            })
+            .catch(error => {
+                globalThis.headersResult = { error: error.message };
+                globalThis.testCompleted();
             });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.headersResult")
             XCTAssertEqual(result["customHeader"].toString(), "SwiftJS-Test")
             XCTAssertEqual(result["userAgent"].toString(), "SwiftJS/1.0")
             XCTAssertEqual(result["accept"].toString(), "application/json")
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Response Type Tests
@@ -272,21 +300,28 @@ final class HTTPTests: XCTestCase {
                         hasSlideshow: !!data.slideshow,
                         author: data.slideshow?.author
                     };
+                    globalThis.testCompleted();
+                })
+                .catch(error => {
+                    globalThis.jsonResult = { error: error.message };
+                    globalThis.testCompleted();
                 });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.jsonResult")
             XCTAssertTrue(result["hasSlideshow"].boolValue ?? false)
             XCTAssertEqual(result["author"].toString(), "Yours Truly")
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     func testTextResponse() {
@@ -302,22 +337,29 @@ final class HTTPTests: XCTestCase {
                         hasContent: text.length > 0,
                         hasUserAgent: text.includes('User-agent')
                     };
+                    globalThis.testCompleted();
+                })
+                .catch(error => {
+                    globalThis.textResult = { error: error.message };
+                    globalThis.testCompleted();
                 });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.textResult")
             XCTAssertTrue(result["isString"].boolValue ?? false)
             XCTAssertTrue(result["hasContent"].boolValue ?? false)
             XCTAssertTrue(result["hasUserAgent"].boolValue ?? false)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Status Code Tests
@@ -334,21 +376,28 @@ final class HTTPTests: XCTestCase {
                         ok: response.ok,
                         statusText: response.statusText
                     };
+                    globalThis.testCompleted();
+                })
+                .catch(error => {
+                    globalThis.notFoundResult = { error: error.message };
+                    globalThis.testCompleted();
                 });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.notFoundResult")
             XCTAssertEqual(result["status"].numberValue, 404)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     func test500Response() {
@@ -362,21 +411,28 @@ final class HTTPTests: XCTestCase {
                         status: response.status,
                         ok: response.ok
                     };
+                    globalThis.testCompleted();
+                })
+                .catch(error => {
+                    globalThis.serverErrorResult = { error: error.message };
+                    globalThis.testCompleted();
                 });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.serverErrorResult")
             XCTAssertEqual(result["status"].numberValue, 500)
             XCTAssertFalse(result["ok"].boolValue ?? true)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 5.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Performance Tests
@@ -398,20 +454,27 @@ final class HTTPTests: XCTestCase {
                         count: responses.length,
                         allOk: responses.every(r => r.ok)
                     };
+                    globalThis.testCompleted();
+                })
+                .catch(error => {
+                    globalThis.multipleResult = { error: error.message };
+                    globalThis.testCompleted();
                 });
         """
         
         let context = SwiftJS()
-        context.evaluateScript(script)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-
+        
+        // Set up completion callback
+        context.globalObject["globalThis"]["testCompleted"] = SwiftJS.Value(in: context) {
+            args, this in
             let result = context.evaluateScript("globalThis.multipleResult")
             XCTAssertEqual(result["count"].numberValue, 3)
             XCTAssertTrue(result["allOk"].boolValue ?? false)
             expectation.fulfill()
+            return SwiftJS.Value.undefined
         }
         
-        wait(for: [expectation], timeout: 8.0)
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
 }
