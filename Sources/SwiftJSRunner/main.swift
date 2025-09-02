@@ -61,7 +61,6 @@ func exitWithError(_ message: String, code: Int32 = 1) -> Never {
 
 func main() {
     let arguments = CommandLine.arguments
-    let programName = (arguments.first! as NSString).lastPathComponent
     let args = Array(arguments.dropFirst())
     
     // Handle help option
@@ -73,8 +72,7 @@ func main() {
     // Create SwiftJS context
     let context = SwiftJS()
     
-    // Set up process.argv with proper arguments
-    var jsArgs: [String] = []
+    // Parse command line arguments
     var sourceCode: String = ""
     var isEvalMode = false
     
@@ -85,7 +83,6 @@ func main() {
         }
         isEvalMode = true
         sourceCode = args[1]
-        jsArgs = [programName, args[0]] + Array(args.dropFirst(2))
     } else {
         // File mode
         let scriptPath = args[0]
@@ -101,16 +98,11 @@ func main() {
         } catch {
             exitWithError("Failed to read JavaScript file: \(error.localizedDescription)")
         }
-        
-        jsArgs = [programName, scriptPath] + Array(args.dropFirst())
     }
     
-    // Set up process.argv in JavaScript context
-    let jsArgsArray = SwiftJS.Value(jsArgs.map { SwiftJS.Value($0) })
-    
-    // Set argv on global object directly and set up process
-    context.globalObject["__argv__"] = jsArgsArray
-    context.evaluateScript("if (typeof process !== 'undefined') { process.argv = __argv__; } else { globalThis.process = { argv: __argv__ }; }")
+    // Note: process.argv is automatically available in SwiftJS via the built-in process object
+    // It gets the actual command line arguments from ProcessInfo.processInfo.arguments
+    // No manual setup needed - SwiftJS handles this automatically
     
     // Execute the JavaScript code
     let result = context.evaluateScript(sourceCode)
