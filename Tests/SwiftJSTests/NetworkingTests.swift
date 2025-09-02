@@ -585,8 +585,6 @@ final class NetworkingTests: XCTestCase {
         wait(for: [expectation])
     }
     
-    // MARK: - Live Network Request Tests - Disabled for now due to parsing issues
-    /*
     func testFetchPOSTRequest() {
         let expectation = XCTestExpectation(description: "fetch POST completion")
         
@@ -703,28 +701,6 @@ final class NetworkingTests: XCTestCase {
         
         context.evaluateScript(script)
         wait(for: [expectation])
-    }
-    */
-    
-    func testFetchPOSTRequest() {
-        // Disabled due to HTTP response parsing issues - just test API existence
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof fetch")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testPUTRequest() {
-        // Disabled due to HTTP response parsing issues - just test API existence
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof fetch")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testDELETERequest() {
-        // Disabled due to HTTP response parsing issues - just test API existence
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof fetch")
-        XCTAssertEqual(result.toString(), "function")
     }
     
     // MARK: - Header Tests
