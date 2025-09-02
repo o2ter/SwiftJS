@@ -112,12 +112,12 @@ final class SwiftJSTests: XCTestCase {
             const polyfillUUID = crypto.randomUUID();
             const nativeUUID = __APPLE_SPEC__.crypto.randomUUID();
             const processId = __APPLE_SPEC__.processInfo.processIdentifier;
-            const hasDeviceFunction = typeof __APPLE_SPEC__.deviceInfo.identifierForVendor;
+            const deviceId = __APPLE_SPEC__.deviceInfo.identifier;
             
             typeof polyfillUUID === 'string' &&
             typeof nativeUUID === 'string' &&
             typeof processId === 'number' &&
-            hasDeviceFunction === 'function' &&
+            typeof deviceId === 'string' &&
             polyfillUUID !== nativeUUID  // They should be different UUIDs
             """
         let context = SwiftJS()
