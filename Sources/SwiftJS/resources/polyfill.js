@@ -799,7 +799,8 @@
 
   // Response implementation
   globalThis.Response = class Response {
-    #body;
+    #bodyStream;
+    #originalBody;
     #status;
     #statusText;
     #headers;
@@ -810,7 +811,7 @@
     #bodyUsed;
 
     constructor(body, init = {}) {
-      this.#body = body || null;
+      this.#originalBody = body || null;
       this.#status = init.status || 200;
       this.#statusText = init.statusText || '';
       this.#headers = new Headers(init.headers);
@@ -819,10 +820,54 @@
       this.#type = init.type || 'default';
       this.#ok = this.#status >= 200 && this.#status < 300;
       this.#bodyUsed = false;
+      this.#bodyStream = this.#createBodyStream(body);
     }
 
     get body() {
-      return this.#body;
+      return this.#bodyStream;
+    }
+
+    #createBodyStream(body) {
+      if (!body) {
+        return null;
+      }
+
+      // If body is already a ReadableStream, return it
+      if (body instanceof ReadableStream) {
+        return body;
+      }
+
+      // Create a ReadableStream from the body data
+      return new ReadableStream({
+        start(controller) {
+          try {
+            if (typeof body === 'string') {
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(body);
+              controller.enqueue(bytes);
+            } else if (body instanceof Uint8Array) {
+              controller.enqueue(body);
+            } else if (body instanceof ArrayBuffer) {
+              controller.enqueue(new Uint8Array(body));
+            } else if (ArrayBuffer.isView(body)) {
+              controller.enqueue(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+            } else if (body instanceof FormData) {
+              const multipart = body[SYMBOLS.formDataToMultipart]();
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(multipart.body);
+              controller.enqueue(bytes);
+            } else {
+              // Convert to string and encode
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(String(body));
+              controller.enqueue(bytes);
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        }
+      });
     }
 
     get status() {
@@ -883,7 +928,19 @@
       if (this.bodyUsed) {
         throw new TypeError('Cannot clone a Response whose body has already been read');
       }
-      return new Response(this.body, {
+
+      // For responses with streams, we need to tee the stream
+      let clonedBody = this.#originalBody;
+      let clonedStream = null;
+
+      if (this.#bodyStream && !this.#originalBody) {
+        // If we only have a stream, we need to tee it
+        const [stream1, stream2] = this.#bodyStream.tee ? this.#bodyStream.tee() : [this.#bodyStream, this.#bodyStream];
+        this.#bodyStream = stream1;
+        clonedStream = stream2;
+      }
+
+      const cloned = new Response(clonedBody, {
         status: this.status,
         statusText: this.statusText,
         headers: this.headers,
@@ -891,6 +948,13 @@
         redirected: this.redirected,
         type: this.type
       });
+
+      // If we teed a stream, set it directly
+      if (clonedStream) {
+        cloned.#bodyStream = clonedStream;
+      }
+
+      return cloned;
     }
 
     async arrayBuffer() {
@@ -899,19 +963,46 @@
       }
       this.#setBodyUsed();
 
-      if (!this.body) return new ArrayBuffer(0);
-      if (this.body instanceof ArrayBuffer) return this.body;
-      if (this.body instanceof Uint8Array) {
-        return this.body.buffer.slice(this.body.byteOffset, this.body.byteOffset + this.body.byteLength);
+      if (!this.#bodyStream) {
+        return new ArrayBuffer(0);
       }
-      if (this.body instanceof FormData) {
-        const multipart = this.body[SYMBOLS.formDataToMultipart]();
+
+      // If we have original body data, use it directly for better performance
+      if (this.#originalBody instanceof ArrayBuffer) {
+        return this.#originalBody;
+      } else if (this.#originalBody instanceof Uint8Array) {
+        return this.#originalBody.buffer.slice(this.#originalBody.byteOffset, this.#originalBody.byteOffset + this.#originalBody.byteLength);
+      } else if (this.#originalBody && typeof this.#originalBody === 'string') {
+        return new TextEncoder().encode(this.#originalBody).buffer;
+      } else if (this.#originalBody instanceof FormData) {
+        const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
       }
-      if (typeof this.body === 'string') {
-        return new TextEncoder().encode(this.body).buffer;
+
+      // Read from stream
+      const reader = this.#bodyStream.getReader();
+      const chunks = [];
+      let totalLength = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          totalLength += value.byteLength;
+        }
+
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          result.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+
+        return result.buffer;
+      } finally {
+        reader.releaseLock();
       }
-      throw new TypeError('Unsupported body type');
     }
 
     async blob() {
@@ -930,13 +1021,15 @@
       }
       this.#setBodyUsed();
 
-      if (!this.body) return '';
-      if (typeof this.body === 'string') return this.body;
-      if (this.body instanceof Uint8Array) {
-        return new TextDecoder().decode(this.body);
+      if (!this.#bodyStream) {
+        return '';
       }
-      if (this.body instanceof FormData) {
-        const multipart = this.body[SYMBOLS.formDataToMultipart]();
+
+      // If we have original string data, use it directly
+      if (typeof this.#originalBody === 'string') {
+        return this.#originalBody;
+      } else if (this.#originalBody instanceof FormData) {
+        const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
         return multipart.body;
       }
 
@@ -969,18 +1062,54 @@
         urlRequest.httpBody = request.body;
       } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
         urlRequest.httpBody = new Uint8Array(request.body);
+      } else if (request.body instanceof ReadableStream) {
+        // Handle streaming request body
+        const reader = request.body.getReader();
+        const chunks = [];
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+          // Concatenate all chunks
+          let totalLength = 0;
+          chunks.forEach(chunk => totalLength += chunk.byteLength);
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          chunks.forEach(chunk => {
+            combined.set(chunk, offset);
+            offset += chunk.byteLength;
+          });
+          urlRequest.httpBody = combined;
+        } finally {
+          reader.releaseLock();
+        }
       }
     }
 
     const session = __APPLE_SPEC__.URLSession.shared();
     const result = await session.dataTaskWithRequestCompletionHandler(urlRequest, null);
 
-    return new Response(result.data, {
+    // Create a ReadableStream from the response data
+    const responseStream = new ReadableStream({
+      start(controller) {
+        if (result.data && result.data.byteLength > 0) {
+          controller.enqueue(result.data);
+        }
+        controller.close();
+      }
+    });
+
+    // Create a special response that uses the stream as its body
+    const response = new Response(responseStream, {
       status: result.response.statusCode,
       statusText: '',
       headers: result.response.allHeaderFields,
       url: result.response.url || request.url
     });
+
+    return response;
   };
 
   // FormData - form data representation
@@ -1222,6 +1351,88 @@
           return Promise.resolve();
         }
       })();
+    }
+
+    tee() {
+      if (this[SYMBOLS.streamInternal].state === 'errored') {
+        throw new TypeError('Cannot tee an errored stream');
+      }
+
+      const reader = this.getReader();
+      const stream1 = new ReadableStream();
+      const stream2 = new ReadableStream();
+
+      const teeState = {
+        reading: false,
+        canceled1: false,
+        canceled2: false,
+        reason1: null,
+        reason2: null
+      };
+
+      function pullAlgorithm() {
+        if (teeState.reading) {
+          return Promise.resolve();
+        }
+
+        teeState.reading = true;
+        return reader.read().then(({ value, done }) => {
+          teeState.reading = false;
+
+          if (done) {
+            if (!teeState.canceled1) {
+              stream1[SYMBOLS.streamInternal].controller.close();
+            }
+            if (!teeState.canceled2) {
+              stream2[SYMBOLS.streamInternal].controller.close();
+            }
+            return;
+          }
+
+          if (!teeState.canceled1) {
+            stream1[SYMBOLS.streamInternal].controller.enqueue(value);
+          }
+          if (!teeState.canceled2) {
+            stream2[SYMBOLS.streamInternal].controller.enqueue(value);
+          }
+        }).catch(error => {
+          teeState.reading = false;
+          if (!teeState.canceled1) {
+            stream1[SYMBOLS.streamInternal].controller.error(error);
+          }
+          if (!teeState.canceled2) {
+            stream2[SYMBOLS.streamInternal].controller.error(error);
+          }
+        });
+      }
+
+      // Set up stream1
+      stream1[SYMBOLS.streamInternal].underlyingSource = {
+        pull: pullAlgorithm,
+        cancel: (reason) => {
+          teeState.canceled1 = true;
+          teeState.reason1 = reason;
+          if (teeState.canceled2) {
+            return reader.cancel(reason);
+          }
+          return Promise.resolve();
+        }
+      };
+
+      // Set up stream2
+      stream2[SYMBOLS.streamInternal].underlyingSource = {
+        pull: pullAlgorithm,
+        cancel: (reason) => {
+          teeState.canceled2 = true;
+          teeState.reason2 = reason;
+          if (teeState.canceled1) {
+            return reader.cancel(reason);
+          }
+          return Promise.resolve();
+        }
+      };
+
+      return [stream1, stream2];
     }
   }
 

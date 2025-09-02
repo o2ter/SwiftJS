@@ -34,6 +34,10 @@ import JavaScriptCore
     ) -> JSValue?
     
     func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue?
+    
+    func streamingDataTaskWithRequestCompletionHandler(
+        _ request: JSURLRequest, _ progressHandler: JSValue?
+    ) -> JSValue?
 }
 
 @objc final class JSURLSession: NSObject, JSURLSessionExport {
@@ -96,5 +100,65 @@ import JavaScriptCore
     func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue? {
         let request = JSURLRequest(url: url)
         return dataTaskWithRequestCompletionHandler(request, completionHandler)
+    }
+    
+    func streamingDataTaskWithRequestCompletionHandler(
+        _ request: JSURLRequest, _ progressHandler: JSValue?
+    ) -> JSValue? {
+        guard let context = JSContext.current() else { return nil }
+
+        return JSValue(newPromiseIn: context) { resolve, reject in
+            let task = self.session.dataTask(with: request.urlRequest) { data, response, error in
+                if let error = error {
+                    reject?.call(withArguments: [
+                        JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
+                    ])
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    reject?.call(withArguments: [
+                        JSValue(newErrorFromMessage: "Invalid response", in: context)!
+                    ])
+                    return
+                }
+
+                let jsResponse = JSURLResponse(response: httpResponse)
+
+                // Create a streaming response that can be read progressively
+                let streamController = JSValue(newObjectIn: context)!
+                streamController.setObject(
+                    JSValue(newFunctionIn: context) { args, this in
+                        if let handler = progressHandler {
+                            handler.call(withArguments: args)
+                        }
+                        return JSValue(undefinedIn: context)!
+                    }, forKeyedSubscript: "enqueue")
+
+                if let data = data {
+                    let dataValue = JSValue.uint8Array(count: data.count, in: context) { buffer in
+                        data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+                    }
+
+                    streamController.objectForKeyedSubscript("enqueue")?.call(withArguments: [
+                        dataValue
+                    ])
+                }
+
+                streamController.setObject(
+                    JSValue(newFunctionIn: context) { args, this in
+                        return JSValue(undefinedIn: context)!
+                    }, forKeyedSubscript: "close")
+
+                let result = JSValue(
+                    object: [
+                        "response": JSValue(object: jsResponse, in: context)!,
+                        "controller": streamController,
+                    ], in: context)!
+
+                resolve?.call(withArguments: [result])
+            }
+            task.resume()
+        }
     }
 }
