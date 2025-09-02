@@ -1033,8 +1033,30 @@
         return multipart.body;
       }
 
-      const buffer = await this.arrayBuffer();
-      return new TextDecoder().decode(buffer);
+      // Read from stream manually instead of calling arrayBuffer() which would check bodyUsed again
+      const reader = this.#bodyStream.getReader();
+      const chunks = [];
+      let totalLength = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          totalLength += value.byteLength;
+        }
+
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          result.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+
+        return new TextDecoder().decode(result);
+      } finally {
+        reader.releaseLock();
+      }
     }
   };
 
@@ -1091,18 +1113,9 @@
     const session = __APPLE_SPEC__.URLSession.shared();
     const result = await session.dataTaskWithRequestCompletionHandler(urlRequest, null);
 
-    // Create a ReadableStream from the response data
-    const responseStream = new ReadableStream({
-      start(controller) {
-        if (result.data && result.data.byteLength > 0) {
-          controller.enqueue(result.data);
-        }
-        controller.close();
-      }
-    });
-
-    // Create a special response that uses the stream as its body
-    const response = new Response(responseStream, {
+    // Create response with the raw data, not a stream
+    // The Response constructor will create the appropriate stream internally
+    const response = new Response(result.data, {
       status: result.response.statusCode,
       statusText: '',
       headers: result.response.allHeaderFields,
