@@ -49,343 +49,17 @@ final class SwiftJSTests: XCTestCase {
         // Test that our polyfill objects are available
         let context = SwiftJS()
         let globals = context.evaluateScript("Object.getOwnPropertyNames(globalThis)")
+        XCTAssertTrue(globals.toString().contains("console"))
+        XCTAssertTrue(globals.toString().contains("setTimeout"))
+        XCTAssertTrue(globals.toString().contains("clearTimeout"))
+        XCTAssertTrue(globals.toString().contains("setInterval"))
+        XCTAssertTrue(globals.toString().contains("clearInterval"))
+        // Network APIs are tested in NetworkingTests.swift
         XCTAssertTrue(globals.toString().contains("XMLHttpRequest"))
         XCTAssertTrue(globals.toString().contains("fetch"))
         XCTAssertTrue(globals.toString().contains("Headers"))
         XCTAssertTrue(globals.toString().contains("Request"))
         XCTAssertTrue(globals.toString().contains("Response"))
-    }
-    
-    // MARK: - XMLHttpRequest Tests
-    
-    func testXMLHttpRequestExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof XMLHttpRequest")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testXMLHttpRequestInstantiation() {
-        let context = SwiftJS()
-        let result = context.evaluateScript(
-      """
-            const xhr = new XMLHttpRequest();
-            xhr.readyState
-        """)
-        XCTAssertEqual(result.numberValue, 0) // UNSENT state
-    }
-    
-    func testXMLHttpRequestConstants() {
-        let script = """
-            [
-                XMLHttpRequest.UNSENT,
-                XMLHttpRequest.OPENED,
-                XMLHttpRequest.HEADERS_RECEIVED,
-                XMLHttpRequest.LOADING,
-                XMLHttpRequest.DONE
-            ]
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result[0].numberValue, 0)
-        XCTAssertEqual(result[1].numberValue, 1)
-        XCTAssertEqual(result[2].numberValue, 2)
-        XCTAssertEqual(result[3].numberValue, 3)
-        XCTAssertEqual(result[4].numberValue, 4)
-    }
-    
-    func testXMLHttpRequestOpen() {
-        let script = """
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
-            xhr.readyState
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result.numberValue, 1) // OPENED state
-    }
-    
-    func testXMLHttpRequestSetRequestHeader() {
-        let script = """
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
-            xhr.setRequestHeader('Content-Type', 'application/json');
-            'success'
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result.toString(), "success")
-    }
-    
-    func testXMLHttpRequestAsyncRequest() {
-        let expectation = XCTestExpectation(description: "XMLHttpRequest async completion")
-        
-        
-        let script = """
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
-            xhr.onload = function() {
-                testCompleted({
-                    status: xhr.status,
-                    readyState: xhr.readyState,
-                    responseLength: xhr.responseText.length
-                });
-            };
-            xhr.onerror = function() {
-                testCompleted({ error: 'XMLHttpRequest failed' });
-            };
-            xhr.send();
-        """
-        
-        let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            XCTAssertFalse(result["error"].isString, result["error"].toString())
-            XCTAssertEqual(result["status"].numberValue, 200)
-            XCTAssertEqual(result["readyState"].numberValue, 4) // DONE
-            XCTAssertTrue((result["responseLength"].numberValue ?? 0) > 0)
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
-    }
-    
-    // MARK: - fetch API Tests
-    
-    func testFetchExists() {
-        let context = SwiftJS()
-        let result = context.evaluateScript("typeof fetch")
-        XCTAssertEqual(result.toString(), "function")
-    }
-    
-    func testFetchReturnsPromise() {
-        let script = """
-            const promise = fetch('https://httpbin.org/json');
-            promise instanceof Promise
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertTrue(result.boolValue ?? false)
-    }
-    
-    func testFetchAPI() {
-        let expectation = XCTestExpectation(description: "Fetch API async completion")
-        
-        
-        let script = """
-            fetch('https://httpbin.org/json')
-                .then(response => response.json())
-                .then(data => {
-                    testCompleted({
-                        success: true,
-                        hasData: data !== null,
-                        type: typeof data
-                    });
-                })
-                .catch(error => {
-                    testCompleted({ error: error.message });
-                });
-        """
-        
-        let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            XCTAssertFalse(result["error"].isString, result["error"].toString())
-            XCTAssertTrue(result["success"].boolValue ?? false)
-            XCTAssertTrue(result["hasData"].boolValue ?? false)
-            XCTAssertEqual(result["type"].stringValue, "object")
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
-    }
-    
-    func testFetchPOSTRequest() {
-        let expectation = XCTestExpectation(description: "fetch POST completion")
-        
-        
-        let script = """
-            fetch('https://httpbin.org/post', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ test: 'data', framework: 'SwiftJS' })
-            })
-            .then(response => response.json())
-            .then(data => {
-                testCompleted({
-                    success: true,
-                    json: data.json,
-                    method: data.method
-                });
-            })
-            .catch(error => {
-                testCompleted({ error: error.message });
-            });
-        """
-        
-        let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            XCTAssertFalse(result["error"].isString, result["error"].toString())
-            XCTAssertTrue(result["success"].boolValue ?? false)
-            XCTAssertEqual(result["method"].toString(), "POST")
-            XCTAssertEqual(result["json"]["framework"].toString(), "SwiftJS")
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
-    }
-    
-    // MARK: - Headers Tests
-    
-    func testHeadersInstantiation() {
-        let script = """
-            const headers = new Headers();
-            headers instanceof Headers
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertTrue(result.boolValue ?? false)
-    }
-    
-    func testHeadersSetAndGet() {
-        let script = """
-            const headers = new Headers();
-            headers.set('Content-Type', 'application/json');
-            headers.get('content-type') // Should be case-insensitive
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result.toString(), "application/json")
-    }
-    
-    func testHeadersFromObject() {
-        let script = """
-            const headers = new Headers({
-                'Authorization': 'Bearer token123',
-                'Content-Type': 'application/json'
-            });
-            [headers.has('authorization'), headers.get('authorization')]
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertTrue(result[0].boolValue ?? false)
-        XCTAssertEqual(result[1].toString(), "Bearer token123")
-    }
-    
-    // MARK: - Request Tests
-    
-    func testRequestInstantiation() {
-        let script = """
-            const request = new Request('https://example.com');
-            [request.url, request.method]
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result[0].toString(), "https://example.com")
-        XCTAssertEqual(result[1].toString(), "GET")
-    }
-    
-    func testRequestWithOptions() {
-        let script = """
-            const request = new Request('https://example.com', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: 'value' })
-            });
-            [request.method, request.headers.get('content-type')]
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result[0].toString(), "POST")
-        XCTAssertEqual(result[1].toString(), "application/json")
-    }
-    
-    // MARK: - Response Tests
-    
-    func testResponseInstantiation() {
-        let script = """
-            const response = new Response('{"test": true}', {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' }
-            });
-            [response.status, response.ok, response.headers.get('content-type')]
-        """
-        let context = SwiftJS()
-        let result = context.evaluateScript(script)
-        XCTAssertEqual(result[0].numberValue, 200)
-        XCTAssertTrue(result[1].boolValue ?? false)
-        XCTAssertEqual(result[2].toString(), "application/json")
-    }
-    
-    func testResponseTextMethod() {
-        let expectation = XCTestExpectation(description: "response.text() completion")
-        
-        
-        let script = """
-            const response = new Response('Hello, SwiftJS!');
-            response.text().then(text => {
-                testCompleted({ result: text });
-            }).catch(error => {
-                testCompleted({ error: error.message });
-            });
-        """
-        
-        let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            XCTAssertFalse(result["error"].isString, result["error"].toString())
-            XCTAssertEqual(result["result"].toString(), "Hello, SwiftJS!")
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
-    }
-    
-    func testResponseJSONMethod() {
-        let expectation = XCTestExpectation(description: "response.json() completion")
-        
-        
-        let script = """
-            const response = new Response('{"message": "Hello", "framework": "SwiftJS"}');
-            response.json().then(data => {
-                testCompleted({ result: data });
-            }).catch(error => {
-                testCompleted({ error: error.message });
-            });
-        """
-        
-        let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            XCTAssertFalse(result["error"].isString, result["error"].toString())
-            XCTAssertEqual(result["result"]["message"].toString(), "Hello")
-            XCTAssertEqual(result["result"]["framework"].toString(), "SwiftJS")
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
     }
     
     // MARK: - Event System Tests
@@ -414,7 +88,7 @@ final class SwiftJSTests: XCTestCase {
     }
     
     // MARK: - Text Encoding Tests
-    
+
     func testTextEncoder() {
         let script = """
             const encoder = new TextEncoder();
@@ -433,131 +107,190 @@ final class SwiftJSTests: XCTestCase {
             const encoded = encoder.encode('Hello, SwiftJS!');
             const decoded = decoder.decode(encoded);
             decoded
-        """
+            """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
         XCTAssertEqual(result.toString(), "Hello, SwiftJS!")
     }
+
+    // MARK: - Timer Tests
     
-    // MARK: - Error Handling Tests
+    func testSetTimeoutExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof setTimeout")
+        XCTAssertEqual(result.toString(), "function")
+    }
     
-    func testXMLHttpRequestErrorHandling() {
+    func testSetIntervalExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof setInterval")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    func testClearTimeoutExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof clearTimeout")
+        XCTAssertEqual(result.toString(), "function")
+    }
+
+    func testClearIntervalExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof clearInterval")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    // MARK: - Console Tests
+
+    func testConsoleExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof console")
+        XCTAssertEqual(result.toString(), "object")
+    }
+    
+    func testConsoleLog() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof console.log")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    // MARK: - Promise Tests
+
+    func testPromiseExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof Promise")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    func testPromiseCreation() {
         let script = """
-            const xhr = new XMLHttpRequest();
-            try {
-                xhr.setRequestHeader('Test', 'value'); // Should fail - not opened
-                false
-            } catch (error) {
-                error.message.includes('InvalidStateError')
-            }
+            const promise = new Promise((resolve, reject) => {
+                resolve('test');
+            });
+            promise instanceof Promise
         """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
         XCTAssertTrue(result.boolValue ?? false)
     }
     
-    func testFetchInvalidURL() {
-        let expectation = XCTestExpectation(description: "fetch error handling")
-        
-        
-        let script = """
-            fetch('invalid://url')
-                .then(() => {
-                    testCompleted({ success: true });
-                })
-                .catch(error => {
-                    testCompleted({ error: error.message, expectError: true });
-                });
-        """
-        
+    // MARK: - Crypto API Tests
+    
+    func testCryptoExists() {
         let context = SwiftJS()
-        
-        // Set up completion callback
-        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            // For this test, we expect an error to occur
-            if result["expectError"].boolValue == true {
-                XCTAssertTrue(result["error"].isString)
-            } else {
-                XCTAssertFalse(result["error"].isString, result["error"].toString())
-            }
-            expectation.fulfill()
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
+        let result = context.evaluateScript("typeof crypto")
+        XCTAssertEqual(result.toString(), "object")
     }
     
-    // MARK: - Integration Tests
-    
-    func testXMLHttpRequestAndFetchCompatibility() {
-        let expectation = XCTestExpectation(description: "XHR and fetch both work")
-        
-        var completedCount = 0
-        var xhrResult: Bool = false
-        var fetchResult: Bool = false
-        
-        let script = """
-            // Test XMLHttpRequest
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
-            xhr.onload = function() {
-                xhrTestCompleted({ success: xhr.status === 200 });
-            };
-            xhr.onerror = function() {
-                xhrTestCompleted({ error: 'XMLHttpRequest failed' });
-            };
-            xhr.send();
-            
-            // Test fetch
-            fetch('https://httpbin.org/json')
-                .then(response => {
-                    fetchTestCompleted({ success: response.ok });
-                })
-                .catch(error => {
-                    fetchTestCompleted({ error: error.message });
-                });
-        """
-        
+    func testCryptoRandomUUID() {
         let context = SwiftJS()
-        
-        // Set up completion callbacks
-        context.globalObject["xhrTestCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            if result["error"].isString {
-                print("XHR Error: \(result["error"].toString())")
-                xhrResult = false
-            } else {
-                xhrResult = result["success"].boolValue ?? false
-            }
-            completedCount += 1
-            if completedCount == 2 {
-                XCTAssertTrue(xhrResult, "XMLHttpRequest should complete successfully")
-                XCTAssertTrue(fetchResult, "fetch should complete successfully")
-                expectation.fulfill()
-            }
-            return SwiftJS.Value.undefined
-        }
+        let result = context.evaluateScript("typeof crypto.randomUUID")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    func testCryptoGetRandomValues() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof crypto.getRandomValues")
+        XCTAssertEqual(result.toString(), "function")
+    }
+    
+    // MARK: - Process Info Tests
 
-        context.globalObject["fetchTestCompleted"] = SwiftJS.Value(in: context) { args, this in
-            let result = args[0]
-            if result["error"].isString {
-                print("Fetch Error: \(result["error"].toString())")
-                fetchResult = false
-            } else {
-                fetchResult = result["success"].boolValue ?? false
+    func testProcessExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof process")
+        XCTAssertEqual(result.toString(), "object")
+    }
+
+    func testProcessPid() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof process.pid")
+        XCTAssertEqual(result.toString(), "number")
+    }
+    
+    // MARK: - Global Native API Tests
+
+    func testAppleSpecExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof __APPLE_SPEC__")
+        XCTAssertEqual(result.toString(), "object")
+    }
+
+    func testAppleSpecCrypto() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.crypto")
+        XCTAssertEqual(result.toString(), "object")
+    }
+    
+    func testAppleSpecProcessInfo() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof __APPLE_SPEC__.processInfo")
+        XCTAssertEqual(result.toString(), "object")
+    }
+    
+    // MARK: - Bridge Performance Tests
+    
+    func testSwiftJavaScriptBridgeBasic() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("__APPLE_SPEC__.processInfo.processIdentifier")
+        XCTAssertTrue((result.numberValue ?? 0) > 0)
+    }
+    
+    // MARK: - Error Handling Tests
+    
+    func testJavaScriptExceptionHandling() {
+        let context = SwiftJS()
+        let result = context.evaluateScript(
+            """
+            try {
+                throw new Error("Test error");
+            } catch (e) {
+                e.message;
             }
-            completedCount += 1
-            if completedCount == 2 {
-                XCTAssertTrue(xhrResult, "XMLHttpRequest should complete successfully")
-                XCTAssertTrue(fetchResult, "fetch should complete successfully")
-                expectation.fulfill()
-            }
-            return SwiftJS.Value.undefined
-        }
-        
-        context.evaluateScript(script)
-        wait(for: [expectation])
+            """)
+        XCTAssertEqual(result.toString(), "Test error")
+    }
+
+    func testUndefinedVariableAccess() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof undefinedVariable")
+        XCTAssertEqual(result.toString(), "undefined")
+    }
+    
+    // MARK: - Value Marshaling Tests
+
+    func testStringMarshaling() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("'Hello, SwiftJS!'")
+        XCTAssertEqual(result.toString(), "Hello, SwiftJS!")
+    }
+
+    func testNumberMarshaling() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("42.5")
+        XCTAssertEqual(result.numberValue, 42.5)
+    }
+    
+    func testBooleanMarshaling() {
+        let context = SwiftJS()
+        let trueResult = context.evaluateScript("true")
+        let falseResult = context.evaluateScript("false")
+        XCTAssertTrue(trueResult.boolValue ?? false)
+        XCTAssertFalse(falseResult.boolValue ?? true)
+    }
+
+    func testArrayMarshaling() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("[1, 2, 3, 'test']")
+        XCTAssertEqual(result[0].numberValue, 1)
+        XCTAssertEqual(result[1].numberValue, 2)
+        XCTAssertEqual(result[2].numberValue, 3)
+        XCTAssertEqual(result[3].toString(), "test")
+    }
+
+    func testObjectMarshaling() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("({ name: 'SwiftJS', version: 1.0 })")
+        XCTAssertEqual(result["name"].toString(), "SwiftJS")
+        XCTAssertEqual(result["version"].numberValue, 1.0)
     }
 }
