@@ -1308,7 +1308,8 @@
         readRequests: [],
         state: 'readable',
         storedError: undefined,
-        controller: null
+        controller: null,
+        pulling: false
       };
 
       // create controller and store reference
@@ -1334,8 +1335,26 @@
             return Promise.resolve({ value, done: false });
           }
           if (s.state === 'closed') return Promise.resolve({ value: undefined, done: true });
+          
           const deferred = createDeferred();
           s.readRequests.push(deferred);
+          
+          // CRITICAL FIX: Call the pull method if available to generate more data
+          if (s.underlyingSource && s.underlyingSource.pull && !s.pulling) {
+            s.pulling = true;
+            try {
+              const pullResult = s.underlyingSource.pull(s.controller);
+              if (pullResult && typeof pullResult.then === 'function') {
+                pullResult.then(() => { s.pulling = false; }).catch(e => { s.pulling = false; s.controller.error(e); });
+              } else {
+                s.pulling = false;
+              }
+            } catch (e) {
+              s.pulling = false;
+              s.controller.error(e);
+            }
+          }
+          
           return deferred.promise;
         }
 
@@ -1359,9 +1378,7 @@
       }
 
       const reader = this.getReader();
-      const stream1 = new ReadableStream();
-      const stream2 = new ReadableStream();
-
+      
       const teeState = {
         reading: false,
         canceled1: false,
@@ -1406,8 +1423,8 @@
         });
       }
 
-      // Set up stream1
-      stream1[SYMBOLS.streamInternal].underlyingSource = {
+      // Create streams with proper underlying sources
+      const stream1 = new ReadableStream({
         pull: pullAlgorithm,
         cancel: (reason) => {
           teeState.canceled1 = true;
@@ -1417,10 +1434,9 @@
           }
           return Promise.resolve();
         }
-      };
+      });
 
-      // Set up stream2
-      stream2[SYMBOLS.streamInternal].underlyingSource = {
+      const stream2 = new ReadableStream({
         pull: pullAlgorithm,
         cancel: (reason) => {
           teeState.canceled2 = true;
@@ -1430,7 +1446,7 @@
           }
           return Promise.resolve();
         }
-      };
+      });
 
       return [stream1, stream2];
     }
