@@ -542,6 +542,493 @@ final class StreamingTests: XCTestCase {
         XCTAssertEqual(result["method"].toString(), "POST")
     }
     
+    // MARK: - Pipe Methods Tests
+
+    func testPipeToBasic() {
+        let expectation = XCTestExpectation(description: "Basic pipeTo functionality")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('Hello '));
+                        controller.enqueue(new TextEncoder().encode('World'));
+                        controller.close();
+                    }
+                });
+                
+                const chunks = [];
+                const destination = new WritableStream({
+                    write(chunk) {
+                        chunks.push(chunk);
+                    },
+                    close() {
+                        let totalLength = 0;
+                        chunks.forEach(chunk => totalLength += chunk.byteLength);
+                        const combined = new Uint8Array(totalLength);
+                        let offset = 0;
+                        chunks.forEach(chunk => {
+                            combined.set(chunk, offset);
+                            offset += chunk.byteLength;
+                        });
+                        const text = new TextDecoder().decode(combined);
+                        testCompleted({ result: text });
+                    }
+                });
+                
+                source.pipeTo(destination).catch(error => {
+                    testCompleted({ error: error.message });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["result"].toString(), "Hello World")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeThroughBasic() {
+        let expectation = XCTestExpectation(description: "Basic pipeThrough functionality")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('hello world'));
+                        controller.close();
+                    }
+                });
+                
+                const upperCaseTransform = new TransformStream({
+                    transform(chunk, controller) {
+                        const text = new TextDecoder().decode(chunk);
+                        const upperText = text.toUpperCase();
+                        controller.enqueue(new TextEncoder().encode(upperText));
+                    }
+                });
+                
+                const chunks = [];
+                const destination = new WritableStream({
+                    write(chunk) {
+                        chunks.push(chunk);
+                    },
+                    close() {
+                        let totalLength = 0;
+                        chunks.forEach(chunk => totalLength += chunk.byteLength);
+                        const combined = new Uint8Array(totalLength);
+                        let offset = 0;
+                        chunks.forEach(chunk => {
+                            combined.set(chunk, offset);
+                            offset += chunk.byteLength;
+                        });
+                        const text = new TextDecoder().decode(combined);
+                        testCompleted({ result: text });
+                    }
+                });
+                
+                const transformedStream = source.pipeThrough(upperCaseTransform);
+                transformedStream.pipeTo(destination).catch(error => {
+                    testCompleted({ error: error.message });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["result"].toString(), "HELLO WORLD")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeThroughChaining() {
+        let expectation = XCTestExpectation(description: "PipeThrough chaining")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('test'));
+                        controller.close();
+                    }
+                });
+                
+                const upperTransform = new TransformStream({
+                    transform(chunk, controller) {
+                        const text = new TextDecoder().decode(chunk);
+                        controller.enqueue(new TextEncoder().encode(text.toUpperCase()));
+                    }
+                });
+                
+                const prefixTransform = new TransformStream({
+                    transform(chunk, controller) {
+                        const text = new TextDecoder().decode(chunk);
+                        controller.enqueue(new TextEncoder().encode('PREFIX_' + text));
+                    }
+                });
+                
+                const chunks = [];
+                const destination = new WritableStream({
+                    write(chunk) {
+                        chunks.push(chunk);
+                    },
+                    close() {
+                        let totalLength = 0;
+                        chunks.forEach(chunk => totalLength += chunk.byteLength);
+                        const combined = new Uint8Array(totalLength);
+                        let offset = 0;
+                        chunks.forEach(chunk => {
+                            combined.set(chunk, offset);
+                            offset += chunk.byteLength;
+                        });
+                        const text = new TextDecoder().decode(combined);
+                        testCompleted({ result: text });
+                    }
+                });
+                
+                source
+                    .pipeThrough(upperTransform)
+                    .pipeThrough(prefixTransform)
+                    .pipeTo(destination)
+                    .catch(error => {
+                        testCompleted({ error: error.message });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["result"].toString(), "PREFIX_TEST")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeToErrorHandling() {
+        let expectation = XCTestExpectation(description: "PipeTo error handling")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('data'));
+                        controller.error(new Error('Source error'));
+                    }
+                });
+                
+                const destination = new WritableStream({
+                    write(chunk) {
+                        // Should receive some data before error
+                    }
+                });
+                
+                source.pipeTo(destination)
+                    .then(() => {
+                        testCompleted({ error: 'Should have failed' });
+                    })
+                    .catch(error => {
+                        testCompleted({ 
+                            caughtError: true,
+                            errorMessage: error.message 
+                        });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertTrue(result["caughtError"].boolValue ?? false)
+            XCTAssertEqual(result["errorMessage"].toString(), "Source error")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeToTypeValidation() {
+        let expectation = XCTestExpectation(description: "PipeTo type validation")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.close();
+                    }
+                });
+                
+                try {
+                    source.pipeTo(null);
+                    testCompleted({ error: 'Should have thrown TypeError' });
+                } catch (error) {
+                    testCompleted({ 
+                        isTypeError: error instanceof TypeError,
+                        errorMessage: error.message 
+                    });
+                }
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertTrue(result["isTypeError"].boolValue ?? false)
+            XCTAssertTrue(result["errorMessage"].toString().contains("WritableStream"))
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeThroughTypeValidation() {
+        let expectation = XCTestExpectation(description: "PipeThrough type validation")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.close();
+                    }
+                });
+                
+                const results = [];
+                
+                // Test with null
+                try {
+                    source.pipeThrough(null);
+                    results.push({ test: 'null', error: 'Should have thrown' });
+                } catch (error) {
+                    results.push({ 
+                        test: 'null',
+                        isTypeError: error instanceof TypeError,
+                        passed: true 
+                    });
+                }
+                
+                // Test with object missing writable
+                try {
+                    source.pipeThrough({ readable: new ReadableStream() });
+                    results.push({ test: 'missingWritable', error: 'Should have thrown' });
+                } catch (error) {
+                    results.push({ 
+                        test: 'missingWritable',
+                        isTypeError: error instanceof TypeError,
+                        passed: true 
+                    });
+                }
+                
+                // Test with object missing readable
+                try {
+                    source.pipeThrough({ writable: new WritableStream() });
+                    results.push({ test: 'missingReadable', error: 'Should have thrown' });
+                } catch (error) {
+                    results.push({ 
+                        test: 'missingReadable',
+                        isTypeError: error instanceof TypeError,
+                        passed: true 
+                    });
+                }
+                
+                testCompleted({ results: results });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            let results = result["results"]
+            XCTAssertEqual(results["length"].numberValue, 3)
+
+            for i in 0..<3 {
+                let testResult = results[i]
+                XCTAssertTrue(
+                    testResult["passed"].boolValue ?? false,
+                    "Test \(testResult["test"].toString()) failed")
+                XCTAssertTrue(
+                    testResult["isTypeError"].boolValue ?? false,
+                    "Test \(testResult["test"].toString()) should be TypeError")
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeToWithAbortSignal() {
+        let expectation = XCTestExpectation(description: "PipeTo with AbortSignal")
+
+        let script = """
+                const controller = new AbortController();
+                
+                const source = new ReadableStream({
+                    start(streamController) {
+                        let count = 0;
+                        const interval = setInterval(() => {
+                            streamController.enqueue(new TextEncoder().encode(`chunk-${count++}`));
+                            if (count >= 10) {
+                                streamController.close();
+                                clearInterval(interval);
+                            }
+                        }, 50);
+                    }
+                });
+                
+                const receivedChunks = [];
+                const destination = new WritableStream({
+                    write(chunk) {
+                        const text = new TextDecoder().decode(chunk);
+                        receivedChunks.push(text);
+                    }
+                });
+                
+                // Abort after 150ms (should receive ~3 chunks)
+                setTimeout(() => {
+                    controller.abort();
+                }, 150);
+                
+                source.pipeTo(destination, { signal: controller.signal })
+                    .then(() => {
+                        testCompleted({ error: 'Should not have completed' });
+                    })
+                    .catch(error => {
+                        testCompleted({ 
+                            isAbortError: error.message === 'AbortError',
+                            receivedChunksCount: receivedChunks.length,
+                            receivedSome: receivedChunks.length > 0 && receivedChunks.length < 10
+                        });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertTrue(result["isAbortError"].boolValue ?? false)
+            XCTAssertTrue(result["receivedSome"].boolValue ?? false)
+            let chunksCount = Int(result["receivedChunksCount"].numberValue ?? 0)
+            XCTAssertGreaterThan(chunksCount, 0)
+            XCTAssertLessThan(chunksCount, 10)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testPipeToWithPreventClose() {
+        let expectation = XCTestExpectation(description: "PipeTo with preventClose")
+
+        let script = """
+                const source = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('Hello'));
+                        controller.close();
+                    }
+                });
+                
+                let writerClosed = false;
+                const destination = new WritableStream({
+                    write(chunk) {
+                        // Process chunk
+                    },
+                    close() {
+                        writerClosed = true;
+                    }
+                });
+                
+                source.pipeTo(destination, { preventClose: true })
+                    .then(() => {
+                        testCompleted({ 
+                            writerClosed: writerClosed,
+                            preventedClose: !writerClosed 
+                        });
+                    })
+                    .catch(error => {
+                        testCompleted({ error: error.message });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertFalse(result["writerClosed"].boolValue ?? true)
+            XCTAssertTrue(result["preventedClose"].boolValue ?? false)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testResponsePipeThrough() {
+        let expectation = XCTestExpectation(description: "Response stream pipeThrough")
+
+        let script = """
+                const response = new Response('hello world');
+                
+                const upperCaseTransform = new TransformStream({
+                    transform(chunk, controller) {
+                        const text = new TextDecoder().decode(chunk);
+                        const upperText = text.toUpperCase();
+                        controller.enqueue(new TextEncoder().encode(upperText));
+                    }
+                });
+                
+                const chunks = [];
+                const destination = new WritableStream({
+                    write(chunk) {
+                        chunks.push(chunk);
+                    },
+                    close() {
+                        let totalLength = 0;
+                        chunks.forEach(chunk => totalLength += chunk.byteLength);
+                        const combined = new Uint8Array(totalLength);
+                        let offset = 0;
+                        chunks.forEach(chunk => {
+                            combined.set(chunk, offset);
+                            offset += chunk.byteLength;
+                        });
+                        const text = new TextDecoder().decode(combined);
+                        testCompleted({ result: text });
+                    }
+                });
+                
+                response.body
+                    .pipeThrough(upperCaseTransform)
+                    .pipeTo(destination)
+                    .catch(error => {
+                        testCompleted({ error: error.message });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["result"].toString(), "HELLO WORLD")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
     // MARK: - Error Handling Tests
     
     func testStreamErrorHandling() {
