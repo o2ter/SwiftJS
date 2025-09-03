@@ -52,7 +52,7 @@ import NIOHTTP1
         guard let context = JSContext.current() else { return nil }
 
         return JSValue(newPromiseIn: context) { resolve, reject in
-            Task { @MainActor in
+            Task {
                 do {
                     var accumulatedData = Data()
 

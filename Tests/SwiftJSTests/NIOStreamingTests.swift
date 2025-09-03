@@ -27,7 +27,7 @@ import Testing
 @testable import SwiftJS
 
 @Suite(.serialized) // Run streaming tests in sequence to avoid interference
-struct StreamingTests {
+struct NIOStreamingTests {
 
     @Test func testBasicStreamingDownload() async throws {
         let js = SwiftJS()

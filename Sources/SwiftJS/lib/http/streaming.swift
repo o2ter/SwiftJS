@@ -225,7 +225,7 @@ final class JSStreamReader: @unchecked Sendable {
     /// Create an AsyncStream from a JavaScript ReadableStream
     func createAsyncStream() -> AsyncStream<Data> {
         AsyncStream { continuation in
-            Task { @MainActor in
+            Task {
                 await self.readAllChunks(continuation: continuation)
             }
         }
