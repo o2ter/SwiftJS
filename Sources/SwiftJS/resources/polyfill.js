@@ -540,9 +540,9 @@
 
             // Set response headers when we get the result
             this.#response = result.response;
-            this.#status = result.response?.statusCode ?? 0;
+            this.#status = result.response.statusCode;
             this.#statusText = this.#getStatusText(this.#status);
-            this.#responseURL = result.response?.url || this.#url;
+            this.#responseURL = result.response.url || this.#url;
             if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED) {
               this.#setReadyState(XMLHttpRequest.HEADERS_RECEIVED);
             }
