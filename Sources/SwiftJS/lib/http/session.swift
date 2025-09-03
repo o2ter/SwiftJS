@@ -24,141 +24,193 @@
 //
 
 import JavaScriptCore
+import NIOHTTP1
 
 @objc protocol JSURLSessionExport: JSExport {
 
     static var shared: JSURLSession { get }
     
-    func dataTaskWithRequestCompletionHandler(
-        _ request: JSURLRequest, _ completionHandler: JSValue?
-    ) -> JSValue?
-    
-    func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue?
-    
-    func streamingDataTaskWithRequestCompletionHandler(
-        _ request: JSURLRequest, _ progressHandler: JSValue?
+    func httpRequestWithRequest(
+        _ request: JSURLRequest,
+        _ bodyStream: JSValue?,
+        _ progressHandler: JSValue?,
+        _ completionHandler: JSValue?
     ) -> JSValue?
 }
 
-@objc final class JSURLSession: NSObject, JSURLSessionExport {
+@objc final class JSURLSession: NSObject, JSURLSessionExport, @unchecked Sendable {
     
-    let session: URLSession = URLSession(configuration: .ephemeral)
+    static let shared: JSURLSession = JSURLSession()
 
-    nonisolated(unsafe)
-        static let shared: JSURLSession = JSURLSession()
-    
-    func dataTaskWithRequestCompletionHandler(
-        _ request: JSURLRequest, _ completionHandler: JSValue?
+    /// Unified HTTP request method using JSURLRequest
+    func httpRequestWithRequest(
+        _ request: JSURLRequest,
+        _ bodyStream: JSValue?,
+        _ progressHandler: JSValue?,
+        _ completionHandler: JSValue?
     ) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
         return JSValue(newPromiseIn: context) { resolve, reject in
-            let task = self.session.dataTask(with: request.urlRequest) { data, response, error in
-                if let error = error {
+            Task { @MainActor in
+                do {
+                    var accumulatedData = Data()
+
+                    // Choose stream controller based on whether we have a progress handler
+                    let streamController: StreamControllerProtocol
+                    if let progressHandler = progressHandler {
+                        // Streaming mode - call progress handler for each chunk
+                        streamController = ProgressStreamController(
+                            context: context,
+                            progressHandler: progressHandler,
+                            accumulatedData: &accumulatedData
+                        )
+                    } else {
+                        // Regular mode - just accumulate data
+                        streamController = AccumulatingStreamController(
+                            accumulatedData: &accumulatedData)
+                    }
+
+                    let responseHead: HTTPResponseHead
+
+                    if let bodyStream = bodyStream, !bodyStream.isNull && !bodyStream.isUndefined {
+                        // Upload with body stream
+                        request.httpBody = bodyStream
+
+                        // Create AsyncStream from JavaScript stream
+                        let streamReader = JSStreamReader(stream: bodyStream, context: context)
+                        let dataStream = streamReader.createAsyncStream()
+
+                        responseHead = try await NIOHTTPClient.shared.executeStreamingUpload(
+                            request,
+                            bodyStream: dataStream,
+                            streamController: streamController
+                        )
+                    } else {
+                        // Regular request (GET/POST without streaming body)
+                        responseHead = try await NIOHTTPClient.shared.executeStreamingRequest(
+                            request,
+                            streamController: streamController
+                        )
+                    }
+
+                    // Create JSURLResponse from NIO response head
+                    let jsResponse = JSURLResponse(
+                        statusCode: Int(responseHead.status.code),
+                        headers: Dictionary(
+                            uniqueKeysWithValues: responseHead.headers.map { ($0.name, $0.value) }),
+                        url: request.url
+                    )
+
+                    if let progressHandler = progressHandler {
+                        // Streaming mode - resolve with response only (progress handler called completion in close())
+                        resolve?.call(withArguments: [jsResponse])
+                    } else {
+                        // Regular mode - resolve with data and response
+                        let dataValue: JSValue
+                        if !accumulatedData.isEmpty {
+                            dataValue = JSValue.uint8Array(
+                                count: accumulatedData.count, in: context
+                            ) { buffer in
+                                accumulatedData.copyBytes(
+                                    to: buffer.bindMemory(to: UInt8.self),
+                                    count: accumulatedData.count)
+                            }
+                        } else {
+                            dataValue = JSValue.uint8Array(count: 0, in: context)
+                        }
+
+                        let result = JSValue(
+                            object: [
+                                "data": dataValue,
+                                "response": JSValue(object: jsResponse, in: context)!,
+                            ], in: context)!
+
+                        // Call legacy completion handler if provided
+                        if let handler = completionHandler {
+                            let nullValue = JSValue(nullIn: context)!
+                            let responseValue = JSValue(object: jsResponse, in: context)!
+                            handler.call(withArguments: [nullValue, dataValue, responseValue])
+                        }
+
+                        resolve?.call(withArguments: [result])
+                    }
+                } catch {
                     reject?.call(withArguments: [
                         JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
                     ])
-                    return
                 }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    reject?.call(withArguments: [
-                        JSValue(newErrorFromMessage: "Invalid response", in: context)!
-                    ])
-                    return
-                }
-
-                let jsResponse = JSURLResponse(response: httpResponse)
-                let dataValue: JSValue
-
-                if let data = data {
-                    dataValue = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                        data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
-                    }
-                } else {
-                    dataValue = JSValue.uint8Array(count: 0, in: context)
-                }
-
-                let result = JSValue(
-                    object: [
-                        "data": dataValue,
-                        "response": JSValue(object: jsResponse, in: context)!,
-                    ], in: context)!
-
-                if let handler = completionHandler {
-                    let nullValue = JSValue(nullIn: context)!
-                    let responseValue = JSValue(object: jsResponse, in: context)!
-                    handler.call(withArguments: [nullValue, dataValue, responseValue])
-                }
-
-                resolve?.call(withArguments: [result])
             }
-            task.resume()
+        }
+    }
+}
+
+/// Stream controller that accumulates all data without calling progress handlers
+/// Used for regular dataTask methods that need all data at once
+final class AccumulatingStreamController: StreamControllerProtocol, @unchecked Sendable {
+    private var accumulatedDataRef: UnsafeMutablePointer<Data>
+    private let lock = NSLock()
+
+    init(accumulatedData: inout Data) {
+        self.accumulatedDataRef = withUnsafeMutablePointer(to: &accumulatedData) { $0 }
+    }
+    
+    func enqueue(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        accumulatedDataRef.pointee.append(data)
+    }
+
+    func error(_ error: Error) {
+        // Error handling is done at the task level
+    }
+
+    func close() {
+        // No specific cleanup needed
+    }
+}
+
+/// Stream controller that calls progress handler for each chunk
+/// Used for streaming methods that need to report progress
+final class ProgressStreamController: StreamControllerProtocol, @unchecked Sendable {
+    private let context: JSContext
+    private let progressHandler: JSValue?
+    private var accumulatedDataRef: UnsafeMutablePointer<Data>
+    private let lock = NSLock()
+
+    init(context: JSContext, progressHandler: JSValue?, accumulatedData: inout Data) {
+        self.context = context
+        self.progressHandler = progressHandler
+        self.accumulatedDataRef = withUnsafeMutablePointer(to: &accumulatedData) { $0 }
+    }
+
+    func enqueue(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        accumulatedDataRef.pointee.append(data)
+
+        // Call progress handler if provided
+        if let progressHandler = progressHandler, !data.isEmpty {
+            let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
+                data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+            }
+
+            // Call progress handler with data chunk and completion status (false = not complete)
+            progressHandler.call(withArguments: [uint8Array, false])
         }
     }
 
-    func dataTaskWithURL(_ url: String, completionHandler: JSValue?) -> JSValue? {
-        let request = JSURLRequest(url: url)
-        return dataTaskWithRequestCompletionHandler(request, completionHandler)
+    func error(_ error: Error) {
+        // Error handling is done at the task level
     }
-    
-    func streamingDataTaskWithRequestCompletionHandler(
-        _ request: JSURLRequest, _ progressHandler: JSValue?
-    ) -> JSValue? {
-        guard let context = JSContext.current() else { return nil }
 
-        return JSValue(newPromiseIn: context) { resolve, reject in
-            let task = self.session.dataTask(with: request.urlRequest) { data, response, error in
-                if let error = error {
-                    reject?.call(withArguments: [
-                        JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
-                    ])
-                    return
-                }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    reject?.call(withArguments: [
-                        JSValue(newErrorFromMessage: "Invalid response", in: context)!
-                    ])
-                    return
-                }
-
-                let jsResponse = JSURLResponse(response: httpResponse)
-
-                // Create a streaming response that can be read progressively
-                let streamController = JSValue(newObjectIn: context)!
-                streamController.setObject(
-                    JSValue(newFunctionIn: context) { args, this in
-                        if let handler = progressHandler {
-                            handler.call(withArguments: args)
-                        }
-                        return JSValue(undefinedIn: context)!
-                    }, forKeyedSubscript: "enqueue")
-
-                if let data = data {
-                    let dataValue = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                        data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
-                    }
-
-                    streamController.objectForKeyedSubscript("enqueue")?.call(withArguments: [
-                        dataValue
-                    ])
-                }
-
-                streamController.setObject(
-                    JSValue(newFunctionIn: context) { args, this in
-                        return JSValue(undefinedIn: context)!
-                    }, forKeyedSubscript: "close")
-
-                let result = JSValue(
-                    object: [
-                        "response": JSValue(object: jsResponse, in: context)!,
-                        "controller": streamController,
-                    ], in: context)!
-
-                resolve?.call(withArguments: [result])
-            }
-            task.resume()
+    func close() {
+        // Call progress handler with completion signal
+        if let progressHandler = progressHandler {
+            // Call with empty data and completion = true
+            let emptyArray = JSValue.uint8Array(count: 0, in: context) { _ in }
+            progressHandler.call(withArguments: [emptyArray, true])
         }
     }
 }

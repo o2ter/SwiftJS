@@ -39,12 +39,18 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.12.2"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.19.0")
     ],
     targets: [
         .target(
             name: "SwiftJS",
             dependencies: [
-                .product(name: "Crypto", package: "swift-crypto")
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+                .product(name: "AsyncHTTPClient", package: "async-http-client")
             ],
             resources: [
                 .embedInCode("resources/polyfill.js")

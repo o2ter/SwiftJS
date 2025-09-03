@@ -468,15 +468,105 @@
       this.#dispatchEvent('loadstart');
 
       const session = __APPLE_SPEC__.URLSession.shared();
-      const promise = session.dataTaskWithRequestCompletionHandler(this.#request, null);
+
+      // Implement progressive loading with onprogress events
+      let accumulatedData = new Uint8Array(0);
+      let timeoutId = null;
+
+      // Set up timeout if specified
+      if (this.timeout > 0) {
+        timeoutId = setTimeout(() => {
+          if (!this.#aborted && this.readyState !== XMLHttpRequest.DONE) {
+            this.#aborted = true;
+            this.#setReadyState(XMLHttpRequest.DONE);
+            this.#dispatchEvent('timeout');
+            this.#dispatchEvent('loadend');
+          }
+        }, this.timeout);
+      }
+
+      const progressHandler = (chunk, isComplete) => {
+        if (this.#aborted) return;
+
+        if (chunk && chunk.length > 0) {
+          // Accumulate chunks for partial response access
+          const newData = new Uint8Array(accumulatedData.length + chunk.length);
+          newData.set(accumulatedData);
+          newData.set(chunk, accumulatedData.length);
+          accumulatedData = newData;
+
+          // Update partial response text for readyState = 3 (LOADING)
+          if (this.responseType === '' || this.responseType === 'text') {
+            this.#responseText = new TextDecoder().decode(accumulatedData);
+            this.#responseData = this.#responseText;
+          }
+
+          // Fire progress event
+          const progressEvent = new Event('progress');
+          progressEvent.loaded = accumulatedData.length;
+          progressEvent.lengthComputable = false; // We don't know total yet
+          this.dispatchEvent(progressEvent);
+          if (this.onprogress) {
+            this.onprogress.call(this, progressEvent);
+          }
+        }
+
+        if (isComplete && !this.#aborted) {
+          // Clear timeout on completion
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          // Final response data is already accumulated
+          this.#finalizeResponse(accumulatedData);
+        }
+      };
+
+      const promise = session.httpRequestWithRequest(
+        this.#request,
+        null,              // bodyStream 
+        progressHandler,   // progressHandler for streaming updates
+        null               // completionHandler
+      );
 
       promise
-        .then(result => this.#handleResponse(result))
-        .catch(error => this.#handleError(error));
+        .then(result => {
+          if (!this.#aborted) {
+            // Clear timeout on success
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+
+            // Set response headers when we get the result
+            this.#response = result.response;
+            this.#status = result.response.statusCode;
+            this.#statusText = this.#getStatusText(this.#status);
+            this.#responseURL = result.response.url || this.#url;
+
+            // Fire headers received if we haven't reached DONE state yet
+            if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED) {
+              this.#setReadyState(XMLHttpRequest.HEADERS_RECEIVED);
+            }
+
+            this.#handleResponse(result, accumulatedData);
+          }
+        })
+        .catch(error => {
+          // Clear timeout on error
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          this.#handleError(error);
+        });
     }
 
     #setRequestBody(body) {
       if (!body) return;
+
+      // Fire upload events for non-empty bodies
+      let hasUploadBody = false;
 
       if (body instanceof FormData) {
         const multipart = body[SYMBOLS.formDataToMultipart]();
@@ -484,28 +574,60 @@
         if (!this.#requestHeaders['Content-Type']) {
           this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
         }
+        hasUploadBody = true;
       } else if (typeof body === 'string') {
         this.#request.httpBody = body;
         if (!this.#requestHeaders['Content-Type']) {
           this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
         }
+        hasUploadBody = body.length > 0;
       } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
         this.#request.httpBody = new Uint8Array(body);
         if (!this.#requestHeaders['Content-Type']) {
           this.setRequestHeader('Content-Type', 'application/octet-stream');
         }
+        hasUploadBody = true;
+      }
+
+      // Fire upload events if we have a body to upload
+      if (hasUploadBody) {
+        // Fire upload start
+        const uploadStartEvent = new Event('loadstart');
+        this.#upload.dispatchEvent(uploadStartEvent);
+
+        // Simulate upload progress (since we don't have real upload progress from Swift yet)
+        setTimeout(() => {
+          const uploadProgressEvent = new Event('progress');
+          uploadProgressEvent.loaded = this.#request.httpBody ? this.#request.httpBody.length : 0;
+          uploadProgressEvent.total = uploadProgressEvent.loaded;
+          uploadProgressEvent.lengthComputable = true;
+          this.#upload.dispatchEvent(uploadProgressEvent);
+
+          const uploadLoadEvent = new Event('load');
+          this.#upload.dispatchEvent(uploadLoadEvent);
+
+          const uploadLoadEndEvent = new Event('loadend');
+          this.#upload.dispatchEvent(uploadLoadEndEvent);
+        }, 0);
       }
     }
 
-    #handleResponse(result) {
+    #finalizeResponse(accumulatedData) {
       if (this.#aborted) return;
 
-      this.#response = result.response;
-      this.#status = result.response.statusCode;
-      this.#statusText = this.#getStatusText(this.#status);
-      this.#responseURL = result.response.url || this.#url;
+      // Set final response data based on responseType
+      this.#setResponseData(accumulatedData);
+      this.#setReadyState(XMLHttpRequest.DONE);
+      this.#dispatchEvent('load');
+      this.#dispatchEvent('loadend');
+    }
 
-      this.#setResponseData(result.data);
+    #handleResponse(result, accumulatedData) {
+      if (this.#aborted || this.readyState === XMLHttpRequest.DONE) return;
+
+      // If we have accumulated data from progress, use it; otherwise use result.data
+      const finalData = accumulatedData || result.data;
+      this.#setResponseData(finalData);
       this.#setReadyState(XMLHttpRequest.DONE);
       this.#dispatchEvent('load');
       this.#dispatchEvent('loadend');
@@ -553,6 +675,7 @@
         this.#dispatchEvent('abort');
         this.#dispatchEvent('loadend');
       }
+      // Note: We can't easily cancel the ongoing Swift request, but we mark it as aborted
     }
 
     getResponseHeader(name) {
@@ -1071,9 +1194,14 @@
       urlRequest.setValueForHTTPHeaderField(value, key);
     }
 
-    // Set body
+    // Set body and determine if we need streaming
+    let bodyStream = null;
+
     if (request.body) {
-      if (request.body instanceof FormData) {
+      if (request.body instanceof ReadableStream) {
+        // Pass the stream directly to SwiftNIO for true streaming
+        bodyStream = request.body;
+      } else if (request.body instanceof FormData) {
         const multipart = request.body[SYMBOLS.formDataToMultipart]();
         urlRequest.httpBody = multipart.body;
         urlRequest.setValueForHTTPHeaderField(
@@ -1084,42 +1212,45 @@
         urlRequest.httpBody = request.body;
       } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
         urlRequest.httpBody = new Uint8Array(request.body);
-      } else if (request.body instanceof ReadableStream) {
-        // Handle streaming request body
-        const reader = request.body.getReader();
-        const chunks = [];
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-          }
-          // Concatenate all chunks
-          let totalLength = 0;
-          chunks.forEach(chunk => totalLength += chunk.byteLength);
-          const combined = new Uint8Array(totalLength);
-          let offset = 0;
-          chunks.forEach(chunk => {
-            combined.set(chunk, offset);
-            offset += chunk.byteLength;
-          });
-          urlRequest.httpBody = combined;
-        } finally {
-          reader.releaseLock();
-        }
       }
     }
 
     const session = __APPLE_SPEC__.URLSession.shared();
-    const result = await session.dataTaskWithRequestCompletionHandler(urlRequest, null);
 
-    // Create response with the raw data, not a stream
-    // The Response constructor will create the appropriate stream internally
-    const response = new Response(result.data, {
-      status: result.response.statusCode,
+    // Create a streaming response body using progress handler
+    let responseBodyController = null;
+    const responseBody = new ReadableStream({
+      start(controller) {
+        responseBodyController = controller;
+      }
+    });
+
+    // Use progress handler to stream response data
+    const progressHandler = function (chunk, isComplete) {
+      if (responseBodyController) {
+        if (chunk && chunk.length > 0) {
+          responseBodyController.enqueue(chunk);
+        }
+        if (isComplete) {
+          responseBodyController.close();
+          responseBodyController = null;
+        }
+      }
+    };
+
+    const result = await session.httpRequestWithRequest(
+      urlRequest,
+      bodyStream,       // bodyStream parameter
+      progressHandler,  // progressHandler for streaming response
+      null              // completionHandler parameter
+    );
+
+    // Create response with streaming body
+    const response = new Response(responseBody, {
+      status: result.statusCode,
       statusText: '',
-      headers: result.response.allHeaderFields,
-      url: result.response.url || request.url
+      headers: result.allHeaderFields,
+      url: result.url || request.url
     });
 
     return response;

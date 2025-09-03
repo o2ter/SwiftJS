@@ -126,19 +126,38 @@ func main() {
     }
     
     // Keep the run loop running to handle any async operations (timers, promises, etc.)
-    // But with a reasonable timeout to prevent hanging
     let runLoop = RunLoop.current
     let startTime = Date()
-    let timeoutDuration: TimeInterval = 10.0 // 10 seconds timeout
     
-    while runLoop.run(mode: .default, before: Date().addingTimeInterval(0.1)) {
-        // Check for timeout
+    // For eval mode, shorter timeout (30 seconds)
+    // For file mode, longer timeout (5 minutes) to handle longer-running scripts
+    let timeoutDuration: TimeInterval = isEvalMode ? 30.0 : 300.0
+
+    var hasActiveWork = true
+    var lastActivityTime = Date()
+    let inactivityTimeout: TimeInterval = 2.0  // Stop if no activity for 2 seconds
+
+    while hasActiveWork {
+        // Run the loop for a short period
+        let ranWork = runLoop.run(mode: .default, before: Date().addingTimeInterval(0.1))
+
+        // Check for overall timeout
         if Date().timeIntervalSince(startTime) > timeoutDuration {
+            print("Warning: Execution timeout reached (\(timeoutDuration) seconds)")
             break
         }
         
-        // Check if we have any pending timers or other work
-        // This is a simple heuristic - in practice, we might want more sophisticated detection
+        // If work was done, update activity time
+        if ranWork {
+            lastActivityTime = Date()
+        }
+
+        // Check for inactivity (no work for a while means we can exit)
+        if Date().timeIntervalSince(lastActivityTime) > inactivityTimeout {
+            hasActiveWork = false
+        }
+
+        // Small sleep to prevent busy waiting
         Thread.sleep(forTimeInterval: 0.01)
     }
 }

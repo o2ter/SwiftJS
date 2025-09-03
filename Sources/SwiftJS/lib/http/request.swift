@@ -42,7 +42,7 @@ import JavaScriptCore
     func valueForHTTPHeaderField(_ field: String) -> String?
 }
 
-@objc final class JSURLRequest: NSObject, JSURLRequestExport {
+@objc final class JSURLRequest: NSObject, JSURLRequestExport, @unchecked Sendable {
     
     private var request: URLRequest
     
@@ -154,21 +154,42 @@ import JavaScriptCore
 @objc final class JSURLResponse: NSObject, JSURLResponseExport {
     
     private let response: HTTPURLResponse
+    private let customStatusCode: Int?
+    private let customHeaders: [String: String]?
+    private let customURL: String?
     
     init(response: HTTPURLResponse) {
         self.response = response
+        self.customStatusCode = nil
+        self.customHeaders = nil
+        self.customURL = nil
+        super.init()
+    }
+
+    // Convenience initializer for NIO responses
+    init(statusCode: Int, headers: [String: String], url: String?) {
+        // Create a dummy HTTPURLResponse for compatibility
+        let dummyURL = URL(string: url ?? "https://example.com")!
+        self.response = HTTPURLResponse(
+            url: dummyURL, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
+        self.customStatusCode = statusCode
+        self.customHeaders = headers
+        self.customURL = url
         super.init()
     }
     
     var url: String? {
-        return response.url?.absoluteString
+        return customURL ?? response.url?.absoluteString
     }
     
     var statusCode: Int {
-        return response.statusCode
+        return customStatusCode ?? response.statusCode
     }
     
     var allHeaderFields: [String: String] {
+        if let customHeaders = customHeaders {
+            return customHeaders
+        }
         return response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
             if let key = pair.key as? String, let value = pair.value as? String {
                 result[key] = value
@@ -181,14 +202,25 @@ import JavaScriptCore
     }
     
     var expectedContentLength: Int64 {
+        if let contentLength = customHeaders?["Content-Length"] ?? customHeaders?["content-length"]
+        {
+            return Int64(contentLength) ?? response.expectedContentLength
+        }
         return response.expectedContentLength
     }
     
     var mimeType: String? {
+        if let contentType = customHeaders?["Content-Type"] ?? customHeaders?["content-type"] {
+            return contentType.components(separatedBy: ";").first?.trimmingCharacters(
+                in: .whitespaces)
+        }
         return response.mimeType
     }
     
     func value(forHTTPHeaderField field: String) -> String? {
+        if let customHeaders = customHeaders {
+            return customHeaders[field] ?? customHeaders[field.lowercased()]
+        }
         return response.value(forHTTPHeaderField: field)
     }
 }
