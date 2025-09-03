@@ -95,14 +95,25 @@ import NIOHTTP1
                     }
 
                     // Create JSURLResponse from NIO response head
+                    // Handle duplicate headers by combining values with commas (HTTP spec)
+                    var headersDict: [String: String] = [:]
+                    for header in responseHead.headers {
+                        let key = header.name
+                        let value = header.value
+                        if let existing = headersDict[key] {
+                            headersDict[key] = existing + ", " + value
+                        } else {
+                            headersDict[key] = value
+                        }
+                    }
+
                     let jsResponse = JSURLResponse(
                         statusCode: Int(responseHead.status.code),
-                        headers: Dictionary(
-                            uniqueKeysWithValues: responseHead.headers.map { ($0.name, $0.value) }),
+                        headers: headersDict,
                         url: request.url
                     )
 
-                    if let progressHandler = progressHandler {
+                    if progressHandler != nil {
                         // Streaming mode - resolve with response only (progress handler called completion in close())
                         resolve?.call(withArguments: [jsResponse])
                     } else {
