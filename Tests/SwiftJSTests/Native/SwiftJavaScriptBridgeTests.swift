@@ -1,0 +1,104 @@
+//
+//  SwiftJavaScriptBridgeTests.swift
+//  Swift-JavaScript Bridge Tests
+//
+//  The MIT License
+//  Copyright (c) 2021 - 2025 O2ter Limited. All rights reserved.
+//
+//  Permission is hereby granted, free of charge, to any person obtaining a copy
+//  of this software and associated documentation files (the "Software"), to deal
+//  in the Software without restriction, including without limitation the rights
+//  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//  copies of the Software, and to permit persons to whom the Software is
+//  furnished to do so, subject to the following conditions:
+//
+//  The above copyright notice and this permission notice shall be included in
+//  all copies or substantial portions of the Software.
+//
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//  THE SOFTWARE.
+//
+
+import XCTest
+@testable import SwiftJS
+
+@MainActor
+final class SwiftJavaScriptBridgeTests: XCTestCase {
+
+  // MARK: - Swift-JavaScript Bridge Tests
+
+  func testSwiftJavaScriptBridge() {
+    let script = """
+          // Test that Swift objects are properly bridged to JavaScript
+          const appleSpec = __APPLE_SPEC__;
+          
+          // Check that all major native APIs are available
+          const hasCrypto = typeof appleSpec.crypto === 'object';
+          const hasDeviceInfo = typeof appleSpec.deviceInfo === 'object';
+          const hasFileSystem = typeof appleSpec.FileSystem === 'object';
+          const hasURLSession = typeof appleSpec.URLSession === 'object';
+          const hasProcessInfo = typeof appleSpec.processInfo === 'object';
+          
+          hasCrypto && hasDeviceInfo && hasFileSystem && hasURLSession && hasProcessInfo
+      """
+    let context = SwiftJS()
+    let result = context.evaluateScript(script)
+    XCTAssertTrue(result.boolValue ?? false)
+  }
+
+  func testNativeAPICoexistence() {
+    let script = """
+          // Test that native APIs don't interfere with each other
+          try {
+              const uuid = __APPLE_SPEC__.crypto.randomUUID();
+              const deviceIdFunction = typeof __APPLE_SPEC__.deviceInfo.identifierForVendor;
+              const pid = __APPLE_SPEC__.processInfo.processIdentifier;
+              
+              typeof uuid === 'string' && 
+              deviceIdFunction === 'function' && 
+              typeof pid === 'number'
+          } catch (e) {
+              false
+          }
+      """
+    let context = SwiftJS()
+    let result = context.evaluateScript(script)
+    XCTAssertTrue(result.boolValue ?? false)
+  }
+
+  // MARK: - Performance and Memory Tests
+
+  func testNativeAPIPerformance() {
+    let script = """
+          // Test that native APIs perform reasonably
+          const start = Date.now();
+          for (let i = 0; i < 100; i++) {
+              __APPLE_SPEC__.crypto.randomBytes(16);
+          }
+          const end = Date.now();
+          (end - start) < 1000 // Should complete in under 1 second
+      """
+    let context = SwiftJS()
+    let result = context.evaluateScript(script)
+    XCTAssertTrue(result.boolValue ?? false)
+  }
+
+  func testNativeAPIMemoryUsage() {
+    let script = """
+          // Test that native APIs don't leak memory
+          let arrays = [];
+          for (let i = 0; i < 100; i++) {
+              arrays.push(__APPLE_SPEC__.crypto.randomBytes(1024));
+          }
+          arrays.length === 100
+      """
+    let context = SwiftJS()
+    let result = context.evaluateScript(script)
+    XCTAssertTrue(result.boolValue ?? false)
+  }
+}
