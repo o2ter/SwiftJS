@@ -122,6 +122,76 @@ while (true) {
 
 ## Stream Utilities
 
+### Stream Piping
+Pipe streams together for efficient data processing:
+
+```javascript
+// pipeTo: Pipe a readable stream to a writable stream
+const readable = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode('Hello World'));
+    controller.close();
+  }
+});
+
+const writable = new WritableStream({
+  write(chunk) {
+    console.log('Received:', new TextDecoder().decode(chunk));
+  }
+});
+
+await readable.pipeTo(writable);
+
+// pipeThrough: Pipe through a transform stream
+const source = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode('hello world'));
+    controller.close();
+  }
+});
+
+const upperCaseTransform = new TransformStream({
+  transform(chunk, controller) {
+    const text = new TextDecoder().decode(chunk);
+    controller.enqueue(new TextEncoder().encode(text.toUpperCase()));
+  }
+});
+
+const destination = new WritableStream({
+  write(chunk) {
+    console.log('Result:', new TextDecoder().decode(chunk)); // "HELLO WORLD"
+  }
+});
+
+// Chain operations
+source
+  .pipeThrough(upperCaseTransform)
+  .pipeTo(destination);
+```
+
+### Pipe Options
+Both `pipeTo` and `pipeThrough` support options for advanced control:
+
+```javascript
+const controller = new AbortController();
+
+// pipeTo with abort signal
+await readable.pipeTo(writable, {
+  signal: controller.signal,
+  preventClose: false,    // Don't close destination when source ends
+  preventAbort: false,    // Don't abort destination on error
+  preventCancel: false    // Don't cancel source on destination error
+});
+
+// Abort the operation
+controller.abort();
+
+// pipeThrough passes options to the internal pipeTo
+const result = source.pipeThrough(transform, {
+  signal: controller.signal
+});
+```
+
 ### Stream Teeing
 Split a stream into two identical streams:
 
@@ -184,6 +254,91 @@ Streaming support is built on top of SwiftJS's native URLSession integration, pr
 - Proper error handling and cancellation
 - Integration with iOS/macOS networking stack
 - Support for all HTTP methods and headers
+
+## Example: Data Processing Pipeline
+
+```javascript
+// Complex data processing pipeline using pipe methods
+async function processDataPipeline(inputData) {
+  // Source stream with raw data
+  const source = new ReadableStream({
+    start(controller) {
+      inputData.forEach(item => {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(item) + '\n'));
+      });
+      controller.close();
+    }
+  });
+
+  // Parse JSON transform
+  const jsonParser = new TransformStream({
+    transform(chunk, controller) {
+      const text = new TextDecoder().decode(chunk);
+      const lines = text.split('\n').filter(line => line.trim());
+      lines.forEach(line => {
+        try {
+          const data = JSON.parse(line);
+          controller.enqueue(data);
+        } catch (e) {
+          console.error('Invalid JSON:', line);
+        }
+      });
+    }
+  });
+
+  // Filter transform
+  const filter = new TransformStream({
+    transform(chunk, controller) {
+      if (chunk.active === true) {
+        controller.enqueue(chunk);
+      }
+    }
+  });
+
+  // Enhancement transform
+  const enhancer = new TransformStream({
+    transform(chunk, controller) {
+      chunk.processed = true;
+      chunk.timestamp = Date.now();
+      controller.enqueue(new TextEncoder().encode(JSON.stringify(chunk) + '\n'));
+    }
+  });
+
+  // Output collector
+  const results = [];
+  const collector = new WritableStream({
+    write(chunk) {
+      const text = new TextDecoder().decode(chunk);
+      if (text.trim()) {
+        results.push(JSON.parse(text.trim()));
+      }
+    },
+    close() {
+      console.log('Processing complete. Results:', results.length);
+    }
+  });
+
+  // Chain the entire pipeline
+  await source
+    .pipeThrough(jsonParser)
+    .pipeThrough(filter)
+    .pipeThrough(enhancer)
+    .pipeTo(collector);
+
+  return results;
+}
+
+// Usage
+const inputData = [
+  { id: 1, name: 'Item 1', active: true },
+  { id: 2, name: 'Item 2', active: false },
+  { id: 3, name: 'Item 3', active: true }
+];
+
+processDataPipeline(inputData).then(results => {
+  console.log('Final results:', results);
+});
+```
 
 ## Example: File Upload with Progress
 

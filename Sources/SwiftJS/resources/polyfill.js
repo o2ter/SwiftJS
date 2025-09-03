@@ -1463,6 +1463,109 @@
 
       return [stream1, stream2];
     }
+
+    pipeThrough(transform, options = {}) {
+      if (!transform || typeof transform !== 'object') {
+        throw new TypeError('transform must be an object');
+      }
+
+      if (!transform.writable || !transform.readable) {
+        throw new TypeError('transform must have writable and readable properties');
+      }
+
+      if (!(transform.writable instanceof WritableStream)) {
+        throw new TypeError('transform.writable must be a WritableStream');
+      }
+
+      if (!(transform.readable instanceof ReadableStream)) {
+        throw new TypeError('transform.readable must be a ReadableStream');
+      }
+
+      // Start the pipe operation
+      this.pipeTo(transform.writable, options).catch(() => {
+        // Error handling is done in pipeTo
+      });
+
+      return transform.readable;
+    }
+
+    pipeTo(destination, options = {}) {
+      if (!(destination instanceof WritableStream)) {
+        throw new TypeError('destination must be a WritableStream');
+      }
+
+      const signal = options.signal;
+      const preventClose = options.preventClose || false;
+      const preventAbort = options.preventAbort || false;
+      const preventCancel = options.preventCancel || false;
+
+      if (signal && signal.aborted) {
+        return Promise.reject(new Error('AbortError'));
+      }
+
+      const reader = this.getReader();
+      const writer = destination.getWriter();
+
+      let abortPromise = null;
+      if (signal) {
+        abortPromise = new Promise((_, reject) => {
+          signal.addEventListener('abort', () => {
+            reject(new Error('AbortError'));
+          });
+        });
+      }
+
+      function cleanup() {
+        reader.releaseLock();
+        writer.releaseLock();
+      }
+
+      async function pipeLoop() {
+        try {
+          while (true) {
+            const readResult = await (abortPromise ?
+              Promise.race([reader.read(), abortPromise]) :
+              reader.read());
+
+            if (readResult.done) {
+              if (!preventClose) {
+                await writer.close();
+              }
+              cleanup();
+              return;
+            }
+
+            await (abortPromise ?
+              Promise.race([writer.write(readResult.value), abortPromise]) :
+              writer.write(readResult.value));
+          }
+        } catch (error) {
+          cleanup();
+
+          // Handle different error scenarios
+          if (error.message === 'AbortError') {
+            if (!preventCancel) {
+              await reader.cancel().catch(() => { });
+            }
+            if (!preventAbort) {
+              await writer.abort(error).catch(() => { });
+            }
+          } else {
+            // Regular error
+            if (!preventCancel) {
+              await reader.cancel(error).catch(() => { });
+            }
+            if (!preventAbort) {
+              await writer.abort(error).catch(() => { });
+            }
+          }
+
+          throw error;
+        }
+      }
+
+      return pipeLoop();
+    }
   }
 
   class WritableStreamDefaultController {
@@ -1553,6 +1656,10 @@
           s.state = 'errored';
           s.storedError = reason instanceof Error ? reason : new Error(String(reason));
           return Promise.resolve();
+        }
+
+        releaseLock() {
+          // Method to release the writer lock, allowing other writers to be obtained
         }
       })();
     }
