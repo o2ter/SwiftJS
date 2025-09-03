@@ -870,19 +870,75 @@ final class NetworkingTests: XCTestCase {
     }
     
     func test500Response() {
-        // Disabled due to HTTP response parsing issues - just test API existence
+        let expectation = XCTestExpectation(description: "500 response test")
+        
+        let script = """
+            fetch('https://httpbin.org/status/500')
+                .then(response => {
+                    testCompleted({
+                        status: response.status,
+                        ok: response.ok
+                    });
+                })
+                .catch(error => {
+                    testCompleted({ error: error.message });
+                });
+        """
+        
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof fetch")
-        XCTAssertEqual(result.toString(), "function")
+        
+        // Set up completion callback
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["status"].numberValue, 500)
+            XCTAssertFalse(result["ok"].boolValue ?? true)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Performance Tests
     
     func testMultipleSimultaneousRequests() {
-        // Disabled due to HTTP response parsing issues - just test API existence
+        let expectation = XCTestExpectation(description: "Multiple simultaneous requests")
+        
+        let script = """
+            const requests = [
+                fetch('https://httpbin.org/delay/1'),
+                fetch('https://httpbin.org/get?test=1'),
+                fetch('https://httpbin.org/get?test=2')
+            ];
+            
+            Promise.all(requests)
+                .then(responses => {
+                    testCompleted({
+                        count: responses.length,
+                        allOk: responses.every(r => r.ok)
+                    });
+                })
+                .catch(error => {
+                    testCompleted({ error: error.message });
+                });
+        """
+        
         let context = SwiftJS()
-        let result = context.evaluateScript("typeof Promise.all")
-        XCTAssertEqual(result.toString(), "function")
+        
+        // Set up completion callback
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertFalse(result["error"].isString, result["error"].toString())
+            XCTAssertEqual(result["count"].numberValue, 3)
+            XCTAssertTrue(result["allOk"].boolValue ?? false)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation])
     }
     
     // MARK: - Error Handling Tests
