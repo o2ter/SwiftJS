@@ -94,6 +94,13 @@ swift test
 
 ## Project Conventions
 
+### Web Standards Compliance
+- When implementing APIs, prioritize web standards and specifications (W3C, WHATWG, ECMAScript) over Node.js-specific behaviors
+- Follow MDN Web Docs for API signatures, behavior, and error handling patterns
+- Implement standard web APIs (Fetch, Crypto, Streams, etc.) according to their specifications
+- Only deviate from web standards when necessary for Swift/Apple platform integration
+- Document any deviations from standards with clear reasoning
+
 ### Error Handling
 - JavaScript exceptions are captured via `JSContext.exceptionHandler`
 - Swift functions exposed to JS should throw `SwiftJS.Value` errors for proper JS error handling
