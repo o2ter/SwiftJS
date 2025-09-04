@@ -24,6 +24,18 @@ let jsArray: SwiftJS.Value = [1, 2, 3]  // Array literal
 let jsObject: SwiftJS.Value = ["key": "value"]  // Dictionary literal
 ```
 
+**Important Method Binding Behavior:** When accessing JavaScript methods via subscript, the `this` context is lost:
+```swift
+// ❌ WRONG - loses 'this' context, causes TypeError
+let method = object["methodName"]
+let result = method.call(withArguments: [])
+
+// ✅ CORRECT - preserves 'this' context
+let result = object.invokeMethod("methodName", withArguments: [])
+```
+
+This is standard JavaScript behavior where extracting a method from an object unbinds it from its original context. Always use `invokeMethod` for calling object methods to ensure proper `this` binding.
+
 ### Native API Exposure via `__APPLE_SPEC__`
 Native Swift APIs are exposed to JavaScript through the global `__APPLE_SPEC__` object:
 - `crypto`: Cryptographic functions (randomUUID, randomBytes, hashing)
