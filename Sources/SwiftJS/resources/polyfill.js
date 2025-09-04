@@ -869,7 +869,8 @@
               this.#setReadyState(XMLHttpRequest.HEADERS_RECEIVED);
             }
 
-            this.#handleResponse(result, accumulatedData);
+            // Don't call #handleResponse since we're using progress handler
+            // The progress handler will call #finalizeResponse when complete
           }
         })
         .catch(error => {
