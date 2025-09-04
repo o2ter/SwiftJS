@@ -42,6 +42,16 @@ extension SwiftJS {
             }
         }
         
+        /// Check if there are any active timers
+        var hasActiveTimers: Bool {
+            return !timer.isEmpty
+        }
+
+        /// Get count of active timers
+        var activeTimerCount: Int {
+            return timer.count
+        }
+
         deinit {
             for (_, timer) in self.timer {
                 timer.invalidate()

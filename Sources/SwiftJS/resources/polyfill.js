@@ -31,6 +31,21 @@
     chdir(directory) {
       return __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(directory);
     }
+
+    // Standard Node.js process.exit() - sets global flag and throws uncatchable error
+    exit(code = 0) {
+      // Set global exit flag that Swift can check
+      globalThis.__SWIFTJS_EXIT_CODE__ = code;
+      // Throw an error that cannot be caught by user code
+      const exitError = new Error('PROCESS_EXIT');
+      exitError.name = 'ProcessExit';
+      exitError.code = code;
+
+      // Use setTimeout to throw the error async, making it uncatchable
+      setTimeout(() => {
+        throw exitError;
+      }, 0);
+    }
   };
 
   // Event API - basic DOM-like event system

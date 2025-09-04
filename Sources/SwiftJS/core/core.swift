@@ -50,6 +50,16 @@ extension SwiftJS {
     public var runloop: RunLoop {
         return self.virtualMachine.runloop
     }
+    
+    /// Check if there are any active JavaScript timers
+    public var hasActiveTimers: Bool {
+        return self.context.hasActiveTimers
+    }
+
+    /// Get the count of active JavaScript timers
+    public var activeTimerCount: Int {
+        return self.context.activeTimerCount
+    }
 }
 
 extension SwiftJS {

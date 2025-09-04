@@ -107,10 +107,19 @@ func main() {
     // Execute the JavaScript code
     let result = context.evaluateScript(sourceCode)
     
-    // Check if there was an exception
+    // Check if there was an exception (including process.exit)
     let exception = context.exception
     if !exception.isUndefined {
-        // Try to get stack trace
+        // Check if this is a process.exit() call
+        let exceptionName = exception["name"]
+        if exceptionName.toString() == "ProcessExit" {
+            let exitCodeValue = exception["code"]
+            let exitCode = Int32(exitCodeValue.numberValue ?? 0)
+            print("Script called process.exit(\(exitCode))")
+            exit(exitCode)
+        }
+
+        // Handle other exceptions
         let stack = exception["stack"]
         if !stack.isUndefined {
             fputs("JavaScript Error:\n\(stack.toString())\n", stderr)
@@ -127,39 +136,72 @@ func main() {
     
     // Keep the run loop running to handle any async operations (timers, promises, etc.)
     let runLoop = RunLoop.current
-    let startTime = Date()
     
-    // For eval mode, shorter timeout (30 seconds)
-    // For file mode, longer timeout (5 minutes) to handle longer-running scripts
-    let timeoutDuration: TimeInterval = isEvalMode ? 30.0 : 300.0
+    // Set up signal handling for graceful termination
+    var shouldExit = false
+    let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+    signalSource.setEventHandler {
+        print("\nReceived SIGINT (Ctrl+C), shutting down gracefully...")
+        shouldExit = true
+    }
+    signalSource.resume()
 
-    var hasActiveWork = true
+    // For eval mode, use shorter inactivity timeout since it's typically one-shot
+    // For file mode, use longer timeout to allow for longer-running scripts
+    let inactivityTimeout: TimeInterval = isEvalMode ? 1.0 : 5.0
     var lastActivityTime = Date()
-    let inactivityTimeout: TimeInterval = 2.0  // Stop if no activity for 2 seconds
+    var hasHadActivity = false
 
-    while hasActiveWork {
+    if !isEvalMode {
+        print("Script running... Press Ctrl+C to stop.")
+    }
+
+    while !shouldExit {
+        // Check for process.exit() call
+        let exitCodeGlobal = context.globalObject["__SWIFTJS_EXIT_CODE__"]
+        if !exitCodeGlobal.isUndefined {
+            let exitCode = Int32(exitCodeGlobal.numberValue ?? 0)
+            print("Script called process.exit(\(exitCode))")
+            exit(exitCode)
+        }
+
         // Run the loop for a short period
         let ranWork = runLoop.run(mode: .default, before: Date().addingTimeInterval(0.1))
-
-        // Check for overall timeout
-        if Date().timeIntervalSince(startTime) > timeoutDuration {
-            print("Warning: Execution timeout reached (\(timeoutDuration) seconds)")
-            break
-        }
         
         // If work was done, update activity time
         if ranWork {
             lastActivityTime = Date()
+            hasHadActivity = true
         }
+        
+        // Exit conditions based on mode:
+        if isEvalMode {
+            // For eval mode: exit after short inactivity (likely single execution)
+            if Date().timeIntervalSince(lastActivityTime) > inactivityTimeout {
+                break
+            }
+        } else {
+            // For file mode: more sophisticated detection
+            let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
 
-        // Check for inactivity (no work for a while means we can exit)
-        if Date().timeIntervalSince(lastActivityTime) > inactivityTimeout {
-            hasActiveWork = false
+            // Exit if we had activity but now have no timers and no recent activity
+            if hasHadActivity && !context.hasActiveTimers && timeSinceActivity > inactivityTimeout {
+                print("Script appears to have completed (no active timers). Exiting.")
+                break
+            }
+
+            // For very quick scripts that execute immediately without timers
+            if !hasHadActivity && !context.hasActiveTimers && timeSinceActivity > 1.0 {
+                print("Quick script execution completed. Exiting.")
+                break
+            }
         }
-
+        
         // Small sleep to prevent busy waiting
         Thread.sleep(forTimeInterval: 0.01)
     }
+    
+    signalSource.cancel()
 }
 
 // Run the main function
