@@ -257,7 +257,10 @@ extension SwiftJS {
             return .init(integerLiteral: id)
         }
         self.globalObject["clearTimeout"] = .init(in: self) { arguments, _ -> Void in
-            guard let id = arguments[0].numberValue.map(Int.init) else {
+            guard let numberValue = arguments[0].numberValue,
+                numberValue.isFinite,
+                let id = Int(exactly: numberValue)
+            else {
                 // Silently ignore invalid IDs like browsers do
                 return
             }
@@ -274,7 +277,10 @@ extension SwiftJS {
             return .init(integerLiteral: id)
         }
         self.globalObject["clearInterval"] = .init(in: self) { arguments, _ -> Void in
-            guard let id = arguments[0].numberValue.map(Int.init) else {
+            guard let numberValue = arguments[0].numberValue,
+                numberValue.isFinite,
+                let id = Int(exactly: numberValue)
+            else {
                 // Silently ignore invalid IDs like browsers do
                 return
             }
