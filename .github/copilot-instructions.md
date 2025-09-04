@@ -51,6 +51,13 @@ All native objects exposed to JavaScript must conform to `JSExport`:
 - Swift `static func myMethod() -> String` also becomes JavaScript `myObject.myMethod()` (callable function)
 - Tests should expect and call these as functions: `typeof myObject.myProperty === 'function'` and `myObject.myProperty()`
 
+**JavaScriptCore Property Enumeration Limitation:** Swift-exposed objects cannot be enumerated using standard JavaScript methods:
+- `Object.getOwnPropertyNames(swiftObject)` returns an empty array `[]`
+- `for...in` loops do not iterate over Swift-exposed properties/methods
+- `Object.keys(swiftObject)` returns an empty array `[]`
+- However, direct property access works: `swiftObject.myMethod()` and `typeof swiftObject.myMethod === 'function'`
+- Tests should verify functionality directly rather than relying on property enumeration
+
 ### Async/Promise Integration
 Swift async functions are automatically bridged to JavaScript Promises:
 ```swift

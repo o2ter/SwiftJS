@@ -1253,7 +1253,7 @@
     constructor(body, init = {}) {
       this.#originalBody = body || null;
       this.#status = init.status || 200;
-      this.#statusText = init.statusText || '';
+      this.#statusText = init.statusText !== undefined ? init.statusText : getStatusText(this.#status);
       this.#headers = new Headers(init.headers);
       this.#url = init.url || '';
       this.#redirected = init.redirected || false;
