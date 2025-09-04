@@ -38,9 +38,9 @@ let package = Package(
         .library(name: "SwiftJS", targets: ["SwiftJS"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.12.2"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
-        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.19.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.15.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.86.0"),
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.27.0")
     ],
     targets: [
         .target(
