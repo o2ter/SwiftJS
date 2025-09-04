@@ -153,7 +153,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         }
         
         return HTTPResponseHead(
-            version: .http1_1,
+            version: response.version,
             status: HTTPResponseStatus(statusCode: Int(response.status.code)),
             headers: HTTPHeaders(response.headers.map { ($0.name, $0.value) })
         )
@@ -205,7 +205,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         }
         
         return HTTPResponseHead(
-            version: .http1_1,
+            version: response.version,
             status: HTTPResponseStatus(statusCode: Int(response.status.code)),
             headers: HTTPHeaders(response.headers.map { ($0.name, $0.value) })
         )
