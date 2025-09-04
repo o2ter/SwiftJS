@@ -24,18 +24,6 @@ let jsArray: SwiftJS.Value = [1, 2, 3]  // Array literal
 let jsObject: SwiftJS.Value = ["key": "value"]  // Dictionary literal
 ```
 
-**Important Method Binding Behavior:** When accessing JavaScript methods via subscript, the `this` context is lost:
-```swift
-// ❌ WRONG - loses 'this' context, causes TypeError
-let method = object["methodName"]
-let result = method.call(withArguments: [])
-
-// ✅ CORRECT - preserves 'this' context
-let result = object.invokeMethod("methodName", withArguments: [])
-```
-
-This is standard JavaScript behavior where extracting a method from an object unbinds it from its original context. Always use `invokeMethod` for calling object methods to ensure proper `this` binding.
-
 ### Native API Exposure via `__APPLE_SPEC__`
 Native Swift APIs are exposed to JavaScript through the global `__APPLE_SPEC__` object:
 - `crypto`: Cryptographic functions (randomUUID, randomBytes, hashing)
@@ -45,6 +33,24 @@ Native Swift APIs are exposed to JavaScript through the global `__APPLE_SPEC__` 
 - `URLSession`: HTTP requests
 
 ## Critical Patterns
+
+### Method Binding and `this` Context
+**CRITICAL:** When accessing JavaScript methods via subscript, the `this` context is lost, causing methods to fail:
+
+```swift
+// ❌ WRONG - loses 'this' context, causes TypeError
+let method = object["methodName"]
+let result = method.call(withArguments: [])  // TypeError: Type error
+
+// ✅ CORRECT - preserves 'this' context  
+let result = object.invokeMethod("methodName", withArguments: [])
+```
+
+**Why this happens:**
+- JavaScript method extraction unbinds the method from its object
+- Native methods like `Date.getFullYear()` require their original object as `this`
+- `invokeMethod` calls the method directly on the object, preserving the binding
+- This is standard JavaScript behavior, not a SwiftJS limitation
 
 ### JSExport Protocol Implementation
 All native objects exposed to JavaScript must conform to `JSExport`:
@@ -170,3 +176,28 @@ When running tests as an AI agent:
 - Only proceed with next steps after test completion confirmation
 - Never assume a task has completed successfully without confirmation
 - Always ask the user to confirm task completion or termination if the status is unclear
+
+## Critical Testing Patterns
+
+### Performance Testing with `measure` Blocks
+When using XCTest `measure` blocks, scripts are executed multiple times for performance measurement. This creates important constraints:
+
+```swift
+// ❌ WRONG - const/let variables cause redeclaration errors on repeated runs
+let script = """
+    const data = [1, 2, 3];  // SyntaxError on second run
+    data
+"""
+
+// ✅ CORRECT - use var for variables that may be redeclared
+let script = """
+    var data = [1, 2, 3];    // Works on repeated runs
+    data
+"""
+```
+
+**Key Points:**
+- `measure` blocks execute the same code multiple times in the same JavaScript context
+- `const` and `let` declarations cannot be redeclared, causing `SyntaxError` on subsequent runs
+- Always use `var` for variables in scripts that will be executed multiple times
+- This applies to performance tests and any code that may run repeatedly in the same context

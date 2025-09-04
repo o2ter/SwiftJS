@@ -287,7 +287,7 @@ final class ValueMarshalingTests: XCTestCase {
     func testLargeArrayMarshaling() {
         let context = SwiftJS()
         let script = """
-            const largeArray = new Array(10000);
+            var largeArray = new Array(10000);
             for (let i = 0; i < largeArray.length; i++) {
                 largeArray[i] = i;
             }
@@ -304,7 +304,7 @@ final class ValueMarshalingTests: XCTestCase {
     func testLargeObjectMarshaling() {
         let context = SwiftJS()
         let script = """
-            const largeObject = {};
+            var largeObject = {};
             for (let i = 0; i < 1000; i++) {
                 largeObject[`key${i}`] = `value${i}`;
             }
