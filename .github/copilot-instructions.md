@@ -160,7 +160,8 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Both library and test targets have separate resource bundles
 
 ## Temporary Files for Testing
-- When creating temporary files to test code, place all test scripts under `<project_root>/.temp/` to keep the workspace organized and avoid conflicts with the main codebase.
+- When creating temporary files to test JavaScript code, place all test scripts under `<project_root>/.temp/` to keep the workspace organized and avoid conflicts with the main codebase.
+- **Important:** The `.temp/` directory is only for JavaScript test files, not Swift code. Swift code must be run within proper test cases in the `Tests/` directory.
 - Use SwiftJSRunner to execute JavaScript test files: `swift run SwiftJSRunner <script.js>`
 - SwiftJSRunner supports both file execution and eval mode: `swift run SwiftJSRunner -e "console.log('test')"`
 - All SwiftJS APIs are available in SwiftJSRunner including crypto, fetch, file system, and timers
