@@ -40,7 +40,6 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.15.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.86.0"),
-        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.38.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.27.0")
     ],
     targets: [
@@ -50,7 +49,6 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
-                .product(name: "NIOHTTP2", package: "swift-nio-http2"),
                 .product(name: "NIOFoundationCompat", package: "swift-nio"),
                 .product(name: "AsyncHTTPClient", package: "async-http-client")
             ],
