@@ -860,10 +860,11 @@
             }
 
             // Set response headers when we get the result
-            this.#response = result.response;
-            this.#status = result.response.statusCode;
+            // XMLHttpRequest uses progressHandler, so result is the JSURLResponse directly
+            this.#response = result;
+            this.#status = result.statusCode;
             this.#statusText = this.#getStatusText(this.#status);
-            this.#responseURL = result.response.url || this.#url;
+            this.#responseURL = result.url || this.#url;
             if (this.readyState < XMLHttpRequest.HEADERS_RECEIVED) {
               this.#setReadyState(XMLHttpRequest.HEADERS_RECEIVED);
             }

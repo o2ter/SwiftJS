@@ -371,9 +371,15 @@ final class FetchTests: XCTestCase {
             fetch(request)
                 .then(response => response.json())
                 .then(data => {
+                    // Check for header case-insensitively since HTTP headers can be normalized to lowercase
+                    const headerKeys = Object.keys(data.headers || {});
+                    const testHeaderKey = headerKeys.find(key => key.toLowerCase() === 'x-test-header');
+                    const hasTestHeader = testHeaderKey !== undefined;
+                    const testHeaderValue = hasTestHeader ? data.headers[testHeaderKey] : null;
+                    
                     testCompleted({
-                        hasTestHeader: data.headers && 'X-Test-Header' in data.headers,
-                        testHeaderValue: data.headers ? data.headers['X-Test-Header'] : null
+                        hasTestHeader: hasTestHeader,
+                        testHeaderValue: testHeaderValue
                     });
                 })
                 .catch(error => {
