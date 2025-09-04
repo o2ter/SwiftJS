@@ -152,10 +152,6 @@ func main() {
     var lastActivityTime = Date()
     var hasHadActivity = false
 
-    if !isEvalMode {
-        print("Script running... Press Ctrl+C to stop.")
-    }
-
     while !shouldExit {
         // Check for process.exit() call
         let exitCodeGlobal = context.globalObject["__SWIFTJS_EXIT_CODE__"]
