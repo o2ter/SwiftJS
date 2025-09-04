@@ -146,7 +146,7 @@ final class FileSystemTests: XCTestCase {
                 value: tempDir,
                 hasLength: tempDir && tempDir.length > 0,
                 isAbsolutePath: tempDir && tempDir.startsWith('/'),
-                containsTemp: tempDir && (tempDir.includes('tmp') || tempDir.includes('Temp'))
+                containsTemp: tempDir && (tempDir.includes('tmp') || tempDir.includes('Temp') || tempDir.includes('/T'))
             })
         """
         let context = SwiftJS()
@@ -159,7 +159,7 @@ final class FileSystemTests: XCTestCase {
         let tempDir = result["value"].toString()
         XCTAssertGreaterThan(tempDir.count, 0)
         XCTAssertTrue(tempDir.hasPrefix("/"))
-        // Most systems have "tmp" in temp directory path
+        // Most systems have "tmp" in temp directory path, but macOS may use other patterns
         XCTAssertTrue(result["containsTemp"].boolValue ?? false)
     }
     
