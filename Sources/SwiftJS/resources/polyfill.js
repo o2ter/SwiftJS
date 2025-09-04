@@ -715,6 +715,13 @@
 
     constructor() {
       super();
+      // Copy static constants to instance for compatibility
+      this.UNSENT = XMLHttpRequest.UNSENT;
+      this.OPENED = XMLHttpRequest.OPENED;
+      this.HEADERS_RECEIVED = XMLHttpRequest.HEADERS_RECEIVED;
+      this.LOADING = XMLHttpRequest.LOADING;
+      this.DONE = XMLHttpRequest.DONE;
+      
       // Public properties
       this.responseType = '';
       this.timeout = 0;
