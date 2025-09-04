@@ -54,7 +54,7 @@ final class PerformanceTests: XCTestCase {
         measure {
             for _ in 0..<1000 {
                 _ = context.evaluateScript("""
-                    new Request('https://example.com', {
+                    new Request('https://postman-echo.com', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' }
                     })
@@ -227,7 +227,7 @@ final class PerformanceTests: XCTestCase {
             function createManyRequests() {
                 const requests = [];
                 for (let i = 0; i < 100; i++) {
-                    requests.push(new Request(`https://example.com/api/${i}`, {
+                    requests.push(new Request(`https://postman-echo.com/api/${i}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ id: i, data: `test data ${i}` })
@@ -284,7 +284,8 @@ final class PerformanceTests: XCTestCase {
         let context = SwiftJS()
         measure {
             for _ in 0..<1000 {
-                _ = context.evaluateScript("new __APPLE_SPEC__.URLRequest('https://example.com')")
+                _ = context.evaluateScript(
+                    "new __APPLE_SPEC__.URLRequest('https://postman-echo.com')")
             }
         }
     }
@@ -295,7 +296,7 @@ final class PerformanceTests: XCTestCase {
         let script = """
             function completeWorkflow() {
                 // Create request
-                const request = new Request('https://api.example.com/data', {
+                const request = new Request('https://postman-echo.com/data', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

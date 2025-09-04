@@ -254,7 +254,7 @@ await source
 All fetch responses have streaming bodies by default:
 
 ```javascript
-const response = await fetch('https://api.example.com/large-dataset');
+const response = await fetch('https://postman-echo.com/large-dataset');
 
 // Response body is automatically a ReadableStream
 console.log(response.body instanceof ReadableStream); // true
@@ -289,7 +289,7 @@ const bodyStream = new ReadableStream({
 });
 
 // Send streaming request
-const response = await fetch('https://api.example.com/upload', {
+const response = await fetch('https://postman-echo.com/upload', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/octet-stream'
@@ -347,7 +347,7 @@ async function processLargeResponse(url) {
 }
 
 // Usage
-const data = await processLargeResponse('https://api.example.com/large-data.jsonl');
+const data = await processLargeResponse('https://postman-echo.com/large-data.jsonl');
 console.log(`Processed ${data.length} records`);
 ```
 
@@ -367,11 +367,11 @@ Unlike traditional buffered approaches, SwiftJS streaming maintains constant mem
 
 ```javascript
 // Traditional approach (high memory usage)
-const response = await fetch('https://example.com/1gb-file');
+const response = await fetch('https://postman-echo.com/1gb-file');
 const data = await response.arrayBuffer(); // Loads entire file into memory
 
 // Streaming approach (constant memory usage)
-const response = await fetch('https://example.com/1gb-file');
+const response = await fetch('https://postman-echo.com/1gb-file');
 const reader = response.body.getReader();
 
 while (true) {
@@ -487,7 +487,7 @@ async function downloadWithProgress(url, onProgress) {
 }
 
 // Usage
-const data = await downloadWithProgress('https://example.com/large-file.zip', 
+const data = await downloadWithProgress('https://postman-echo.com/large-file.zip', 
     ({ loaded, total, percentage }) => {
         console.log(`Download progress: ${percentage.toFixed(1)}% (${loaded}/${total})`);
     }

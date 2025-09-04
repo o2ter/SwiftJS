@@ -283,11 +283,11 @@ Performs HTTP requests and returns a Promise that resolves to a Response.
 
 ```javascript
 // GET request
-const response = await fetch('https://api.example.com/data');
+const response = await fetch('https://postman-echo.com/data');
 const data = await response.json();
 
 // POST request
-const response = await fetch('https://api.example.com/data', {
+const response = await fetch('https://postman-echo.com/data', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json'
@@ -329,7 +329,7 @@ const headers2 = new Headers({
 Represents an HTTP request.
 
 ```javascript
-const request = new Request('https://api.example.com/data', {
+const request = new Request('https://postman-echo.com/data', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data: 'value' })
@@ -355,7 +355,7 @@ Represents an HTTP response.
 - `clone()`: Creates a clone of the response
 
 ```javascript
-const response = await fetch('https://api.example.com/data');
+const response = await fetch('https://postman-echo.com/data');
 
 console.log(response.status); // 200
 console.log(response.ok); // true
@@ -457,7 +457,7 @@ const controller = new AbortController();
 const signal = controller.signal;
 
 // Use with fetch
-fetch('https://api.example.com/data', { signal })
+fetch('https://postman-echo.com/data', { signal })
     .then(response => response.json())
     .catch(error => {
         if (error.name === 'AbortError') {
@@ -648,7 +648,7 @@ Perform HTTP requests using native URLSession.
 
 ```javascript
 // Create a request
-const request = new __APPLE_SPEC__.URLRequest('https://api.example.com/data');
+const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/data');
 request.httpMethod = 'POST';
 request.setValueForHTTPHeaderField('application/json', 'Content-Type');
 
@@ -662,7 +662,7 @@ console.log('Data:', new TextDecoder().decode(result.data));
 
 #### Constructor
 ```javascript
-const request = new __APPLE_SPEC__.URLRequest('https://example.com');
+const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com');
 ```
 
 #### Properties

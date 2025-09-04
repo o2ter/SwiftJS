@@ -231,7 +231,7 @@ final class FormDataTests: XCTestCase {
                 formData.append('name', 'test');
                 formData.append('value', '123');
                 
-                const request = new Request('https://httpbin.org/post', {
+                const request = new Request('https://postman-echo.com/post', {
                     method: 'POST',
                     body: formData
                 });
@@ -253,7 +253,7 @@ final class FormDataTests: XCTestCase {
                 formData.append('test', 'data');
                 
                 // Just test that fetch accepts FormData as body without throwing
-                const fetchCall = fetch('https://httpbin.org/post', {
+                const fetchCall = fetch('https://postman-echo.com/post', {
                     method: 'POST',
                     body: formData
                 });

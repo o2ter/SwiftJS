@@ -626,7 +626,7 @@ final class HeadersTests: XCTestCase {
             });
             
             // Test using headers with Request
-            const request = new Request('https://example.com', {
+            const request = new Request('https://postman-echo.com', {
                 method: 'POST',
                 headers: headers
             });

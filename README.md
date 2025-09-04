@@ -91,7 +91,7 @@ const text = await response.text();
 console.log('GitHub Zen:', text);
 
 // POST with JSON
-const response = await fetch('https://api.example.com/data', {
+const response = await fetch('https://postman-echo.com/data', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key: 'value' })
@@ -150,7 +150,7 @@ await readableStream
 ```javascript
 // Timers work seamlessly with other APIs
 setTimeout(async () => {
-    const response = await fetch('https://api.example.com/data');
+    const response = await fetch('https://postman-echo.com/data');
     const data = await response.json();
     console.log('Fetched data:', data);
 }, 1000);

@@ -132,7 +132,7 @@ final class XMLHttpRequestTests: XCTestCase {
     func testXMLHttpRequestOpen() {
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
+            xhr.open('GET', 'https://postman-echo.com/get');
             ({
                 readyState: xhr.readyState,
                 responseURL: xhr.responseURL
@@ -150,7 +150,7 @@ final class XMLHttpRequestTests: XCTestCase {
         for method in methods {
             let script = """
                 const xhr = new XMLHttpRequest();
-                xhr.open('\(method)', 'https://httpbin.org/\(method.lowercased())');
+                xhr.open('\(method)', 'https://postman-echo.com/\(method.lowercased())');
                 xhr.readyState
             """
             let context = SwiftJS()
@@ -164,7 +164,7 @@ final class XMLHttpRequestTests: XCTestCase {
     func testXMLHttpRequestSetRequestHeader() {
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/json');
+            xhr.open('GET', 'https://postman-echo.com/get');
             xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.setRequestHeader('X-Custom-Header', 'test-value');
             'success'
@@ -177,7 +177,7 @@ final class XMLHttpRequestTests: XCTestCase {
     func testXMLHttpRequestSetRequestHeaderCaseInsensitive() {
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'https://httpbin.org/post');
+            xhr.open('POST', 'https://postman-echo.com/post');
             xhr.setRequestHeader('content-type', 'application/json');
             xhr.setRequestHeader('Content-Type', 'application/xml'); // Should combine or override
             'success'
@@ -207,7 +207,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/get');
+            xhr.open('GET', 'https://postman-echo.com/get');
             xhr.send();
             
             try {
@@ -246,7 +246,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/response-headers?Content-Type=application/json');
+            xhr.open('GET', 'https://postman-echo.com/response-headers?Content-Type=application/json');
             
             xhr.onreadystatechange = function() {
                 if (xhr.readyState === XMLHttpRequest.DONE) {
@@ -289,7 +289,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/headers');
+            xhr.open('GET', 'https://postman-echo.com/headers');
             
             xhr.onload = function() {
                 const allHeaders = xhr.getAllResponseHeaders();
@@ -381,7 +381,7 @@ final class XMLHttpRequestTests: XCTestCase {
                 }
             };
             
-            xhr.open('GET', 'https://httpbin.org/get');
+            xhr.open('GET', 'https://postman-echo.com/get');
             xhr.send();
         """
         
@@ -418,7 +418,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/get');
+            xhr.open('GET', 'https://postman-echo.com/get');
             
             xhr.onload = function() {
                 testCompleted({
@@ -460,7 +460,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'https://httpbin.org/post');
+            xhr.open('POST', 'https://postman-echo.com/post');
             xhr.setRequestHeader('Content-Type', 'application/json');
             
             const postData = JSON.stringify({ 
@@ -555,7 +555,7 @@ final class XMLHttpRequestTests: XCTestCase {
         
         let script = """
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', 'https://httpbin.org/delay/5');
+            xhr.open('GET', 'https://postman-echo.com/delay/5');
             
             xhr.onabort = function() {
                 testCompleted({
@@ -600,7 +600,7 @@ final class XMLHttpRequestTests: XCTestCase {
         let script = """
             const xhr = new XMLHttpRequest();
             xhr.timeout = 1000; // 1 second timeout
-            xhr.open('GET', 'https://httpbin.org/delay/5');
+            xhr.open('GET', 'https://postman-echo.com/delay/5');
             
             xhr.ontimeout = function() {
                 testCompleted({
@@ -712,7 +712,7 @@ final class XMLHttpRequestTests: XCTestCase {
                 testCompleted({ error: 'Network error', events: events });
             };
             
-            xhr.open('GET', 'https://httpbin.org/json');
+            xhr.open('GET', 'https://postman-echo.com/get');
             xhr.setRequestHeader('X-Test', 'XMLHttpRequest-Integration');
             xhr.send();
         """

@@ -64,7 +64,7 @@ final class FetchTests: XCTestCase {
     
     func testRequestInstantiation() {
         let script = """
-            const request = new Request('https://example.com');
+            const request = new Request('https://postman-echo.com');
             request instanceof Request
         """
         let context = SwiftJS()
@@ -74,17 +74,17 @@ final class FetchTests: XCTestCase {
     
     func testRequestURL() {
         let script = """
-            const request = new Request('https://example.com/api');
+            const request = new Request('https://postman-echo.com/api');
             request.url
         """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
-        XCTAssertEqual(result.toString(), "https://example.com/api")
+        XCTAssertEqual(result.toString(), "https://postman-echo.com/api")
     }
     
     func testRequestMethod() {
         let script = """
-            const request = new Request('https://example.com', { method: 'POST' });
+            const request = new Request('https://postman-echo.com', { method: 'POST' });
             request.method
         """
         let context = SwiftJS()
@@ -94,7 +94,7 @@ final class FetchTests: XCTestCase {
     
     func testRequestDefaultMethod() {
         let script = """
-            const request = new Request('https://example.com');
+            const request = new Request('https://postman-echo.com');
             request.method
         """
         let context = SwiftJS()
@@ -104,7 +104,7 @@ final class FetchTests: XCTestCase {
     
     func testRequestHeaders() {
         let script = """
-            const request = new Request('https://example.com', {
+            const request = new Request('https://postman-echo.com', {
                 headers: { 'Content-Type': 'application/json' }
             });
             request.headers.get('Content-Type')
@@ -116,7 +116,7 @@ final class FetchTests: XCTestCase {
     
     func testRequestBody() {
         let script = """
-            const request = new Request('https://example.com', {
+            const request = new Request('https://postman-echo.com', {
                 method: 'POST',
                 body: JSON.stringify({ test: 'data' })
             });
@@ -129,7 +129,7 @@ final class FetchTests: XCTestCase {
     
     func testRequestClone() {
         let script = """
-            const original = new Request('https://example.com', {
+            const original = new Request('https://postman-echo.com', {
                 method: 'POST',
                 headers: { 'X-Test': 'value' }
             });
@@ -328,7 +328,7 @@ final class FetchTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Basic fetch call")
         
         let script = """
-            fetch('https://httpbin.org/get')
+            fetch('https://postman-echo.com/get')
                 .then(response => {
                     testCompleted({
                         ok: response.ok,
@@ -364,7 +364,7 @@ final class FetchTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Fetch with Request object")
         
         let script = """
-            const request = new Request('https://httpbin.org/headers', {
+            const request = new Request('https://postman-echo.com/headers', {
                 headers: { 'X-Test-Header': 'fetch-test' }
             });
             
@@ -405,7 +405,7 @@ final class FetchTests: XCTestCase {
         let script = """
             const postData = { name: 'test', value: 123 };
             
-            fetch('https://httpbin.org/post', {
+            fetch('https://postman-echo.com/post', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(postData)
@@ -450,9 +450,9 @@ final class FetchTests: XCTestCase {
         
         let script = """
             const testCases = [
-                { url: 'https://httpbin.org/status/200', expectedStatus: 200 },
-                { url: 'https://httpbin.org/status/404', expectedStatus: 404 },
-                { url: 'https://httpbin.org/status/500', expectedStatus: 500 }
+                { url: 'https://postman-echo.com/status/200', expectedStatus: 200 },
+                { url: 'https://postman-echo.com/status/404', expectedStatus: 404 },
+                { url: 'https://postman-echo.com/status/500', expectedStatus: 500 }
             ];
             
             const results = [];
@@ -550,7 +550,7 @@ final class FetchTests: XCTestCase {
             // Abort immediately
             setTimeout(() => controller.abort(), 10);
             
-            fetch('https://httpbin.org/delay/5', { signal: controller.signal })
+            fetch('https://postman-echo.com/delay/5', { signal: controller.signal })
                 .then(response => {
                     testCompleted({ error: 'Should have been aborted' });
                 })
@@ -592,7 +592,7 @@ final class FetchTests: XCTestCase {
             const tests = [];
             
             // JSON response
-            fetch('https://httpbin.org/json')
+            fetch('https://postman-echo.com/get')
                 .then(response => response.json())
                 .then(data => {
                     tests.push({
@@ -607,7 +607,7 @@ final class FetchTests: XCTestCase {
                 });
             
             function runTextTest() {
-                return fetch('https://httpbin.org/html')
+                return fetch('https://postman-echo.com/get')
                     .then(response => response.text())
                     .then(text => {
                         tests.push({
@@ -656,7 +656,7 @@ final class FetchTests: XCTestCase {
         let script = """
             const startTime = Date.now();
             
-            fetch('https://httpbin.org/get')
+            fetch('https://postman-echo.com/get')
                 .then(response => response.json())
                 .then(data => {
                     const endTime = Date.now();
@@ -704,7 +704,7 @@ final class FetchTests: XCTestCase {
                 testId: Math.random().toString(36)
             };
             
-            const request = new Request('https://httpbin.org/post', {
+            const request = new Request('https://postman-echo.com/post', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

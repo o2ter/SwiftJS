@@ -75,7 +75,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
     func testURLRequestCreation() {
         let script = """
             try {
-                const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/json');
+                const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get');
                 ({
                     success: true,
                     type: typeof request,
@@ -113,7 +113,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     console.log('Starting basic download test...');
                     
                     const session = __APPLE_SPEC__.URLSession.shared();
-                    const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/json');
+                    const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get');
                     
                     const result = await session.httpRequestWithRequest(request, null, null, null);
                     
@@ -211,7 +211,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     });
                     
                     const session = __APPLE_SPEC__.URLSession.shared();
-                    const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/post');
+                    const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/post');
                     request.httpMethod = 'POST';
                     request.setValueForHTTPHeaderField('application/json', 'Content-Type');
                     
@@ -263,7 +263,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     let progressCallCount = 0;
                     
                     const session = __APPLE_SPEC__.URLSession.shared();
-                    const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/bytes/512');
+                    const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get');
                     
                     const progressHandler = function(chunk, isComplete) {
                         progressCallCount++;
@@ -362,7 +362,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
             try {
                 // Test that URLSession can work with ReadableStream
                 const session = __APPLE_SPEC__.URLSession.shared();
-                const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/post');
+                const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/post');
                 
                 const stream = new ReadableStream({
                     start(controller) {
@@ -411,7 +411,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                 const results = [];
                 
                 for (const method of methods) {
-                    const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/' + method.toLowerCase());
+                    const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/' + method.toLowerCase());
                     request.httpMethod = method;
                     
                     results.push({
@@ -449,7 +449,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
     func testHeaderIntegration() {
         let script = """
             try {
-                const request = new __APPLE_SPEC__.URLRequest('https://httpbin.org/headers');
+                const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/headers');
                 
                 // Test header setting
                 request.setValueForHTTPHeaderField('application/json', 'Content-Type');

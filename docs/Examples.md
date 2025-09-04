@@ -373,7 +373,7 @@ fetchUserData('octocat');
 // POST with JSON data
 async function createUser(userData) {
     try {
-        const response = await fetch('https://jsonplaceholder.typicode.com/users', {
+        const response = await fetch('https://postman-echo.com/get', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -406,7 +406,7 @@ createUser(newUser);
 
 // POST with form data
 async function uploadForm(formData) {
-    const response = await fetch('https://httpbin.org/post', {
+        const response = await fetch('https://postman-echo.com/post', {
         method: 'POST',
         body: formData
     });
@@ -460,7 +460,7 @@ async function authenticatedRequest(token) {
 
 // Working with response headers
 async function inspectResponse() {
-    const response = await fetch('https://httpbin.org/headers');
+    const response = await fetch('https://postman-echo.com/headers');
     
     console.log('Response status:', response.status);
     console.log('Response headers:');
@@ -626,7 +626,7 @@ async function processLargeDataStream(url) {
 }
 
 // Usage with a test endpoint
-processLargeDataStream('https://httpbin.org/stream/10');
+processLargeDataStream('https://postman-echo.com/get');
 ```
 
 ## Crypto and Security
@@ -837,7 +837,7 @@ async function fetchWithTimeout(url, timeoutMs = 5000) {
     }
 }
 
-fetchWithTimeout('https://httpbin.org/delay/3', 2000)
+fetchWithTimeout('https://postman-echo.com/delay/3', 2000)
     .catch(error => console.log('Caught timeout:', error.message));
 ```
 
@@ -1091,14 +1091,14 @@ async function testHTTPClient() {
     try {
         // GET request
         console.log('Testing GET request...');
-        const getResult = await client.get('https://httpbin.org/get');
+        const getResult = await client.get('https://postman-echo.com/get');
         console.log('GET result:', getResult.status, getResult.statusText);
         
         // POST request
         console.log('\nTesting POST request...');
         const postData = JSON.stringify({ key: 'value', timestamp: Date.now() });
         const postResult = await client.post(
-            'https://httpbin.org/post',
+            'https://postman-echo.com/post',
             postData,
             { 'Content-Type': 'application/json' }
         );
@@ -1107,7 +1107,7 @@ async function testHTTPClient() {
         // Test error handling
         console.log('\nTesting error handling...');
         try {
-            await client.get('https://httpbin.org/status/404');
+            await client.get('https://postman-echo.com/status/404');
         } catch (error) {
             console.log('Caught expected error:', error.message);
         }
@@ -1191,7 +1191,7 @@ async function runBenchmarks() {
     
     // HTTP requests
     await Benchmark.measure('HTTP request', async () => {
-        const response = await fetch('https://httpbin.org/json');
+        const response = await fetch('https://postman-echo.com/get');
         return await response.json();
     });
     
