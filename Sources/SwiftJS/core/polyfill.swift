@@ -247,17 +247,22 @@ extension SwiftJS {
             )
         }
         self.globalObject["setTimeout"] = .init(in: self) { arguments, _ in
-            guard arguments[0].isFunction else {
+            guard arguments.count > 0,
+                !arguments[0].isNull,
+                !arguments[0].isUndefined,
+                arguments[0].isFunction
+            else {
                 throw SwiftJS.Value(newErrorFromMessage: "Invalid type of callback", in: self)
             }
-            let ms = arguments[1].numberValue ?? 0
+            let ms = arguments.count > 1 ? (arguments[1].numberValue ?? 0) : 0
             let id = self.createTimer(
                 callback: arguments[0], ms: ms, repeats: false,
                 arguments: Array(arguments.dropFirst(2)))
             return .init(integerLiteral: id)
         }
         self.globalObject["clearTimeout"] = .init(in: self) { arguments, _ -> Void in
-            guard let numberValue = arguments[0].numberValue,
+            guard arguments.count > 0,
+                let numberValue = arguments[0].numberValue,
                 numberValue.isFinite,
                 let id = Int(exactly: numberValue)
             else {
@@ -267,17 +272,22 @@ extension SwiftJS {
             self.removeTimer(identifier: id)
         }
         self.globalObject["setInterval"] = .init(in: self) { arguments, _ in
-            guard arguments[0].isFunction else {
+            guard arguments.count > 0,
+                !arguments[0].isNull,
+                !arguments[0].isUndefined,
+                arguments[0].isFunction
+            else {
                 throw SwiftJS.Value(newErrorFromMessage: "Invalid type of callback", in: self)
             }
-            let ms = arguments[1].numberValue ?? 0
+            let ms = arguments.count > 1 ? (arguments[1].numberValue ?? 0) : 0
             let id = self.createTimer(
                 callback: arguments[0], ms: ms, repeats: true,
                 arguments: Array(arguments.dropFirst(2)))
             return .init(integerLiteral: id)
         }
         self.globalObject["clearInterval"] = .init(in: self) { arguments, _ -> Void in
-            guard let numberValue = arguments[0].numberValue,
+            guard arguments.count > 0,
+                let numberValue = arguments[0].numberValue,
                 numberValue.isFinite,
                 let id = Int(exactly: numberValue)
             else {
