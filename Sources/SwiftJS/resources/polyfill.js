@@ -245,6 +245,265 @@
     }
   };
 
+  // Enhanced Console implementation
+  globalThis.console = globalThis.console || {};
+
+  // Console state tracking
+  const consoleState = {
+    timers: new Map(),
+    counters: new Map(),
+    groupStack: [],
+    groupDepth: 0
+  };
+
+  // Utility functions for better formatting
+  function formatValue(value, depth = 0, maxDepth = 3, seen = new WeakSet()) {
+    if (depth > maxDepth) return '[Max Depth Reached]';
+
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+
+    const type = typeof value;
+
+    if (type === 'string') return `"${value}"`;
+    if (type === 'number' || type === 'boolean' || type === 'bigint') return String(value);
+    if (type === 'symbol') return value.toString();
+
+    if (type === 'function') {
+      const funcStr = value.toString();
+      const name = value.name || 'anonymous';
+      // Show just the function signature for better readability
+      const match = funcStr.match(/^(?:async\s+)?(?:function\s*)?([^(]*)\([^)]*\)/);
+      return match ? `[Function: ${name}]` : `[Function: ${name}]`;
+    }
+
+    if (type === 'object') {
+      if (seen.has(value)) return '[Circular Reference]';
+      seen.add(value);
+
+      try {
+        if (Array.isArray(value)) {
+          if (value.length === 0) return '[]';
+          if (depth >= maxDepth) return `[Array(${value.length})]`;
+
+          const items = value.slice(0, 10).map(item => formatValue(item, depth + 1, maxDepth, seen));
+          const result = items.length < value.length
+            ? `[ ${items.join(', ')}, ... ${value.length - items.length} more ]`
+            : `[ ${items.join(', ')} ]`;
+          seen.delete(value);
+          return result;
+        }
+
+        if (value instanceof Date) {
+          seen.delete(value);
+          return value.toISOString();
+        }
+
+        if (value instanceof Error) {
+          seen.delete(value);
+          return `${value.name}: ${value.message}${value.stack ? '\n' + value.stack : ''}`;
+        }
+
+        if (value instanceof RegExp) {
+          seen.delete(value);
+          return value.toString();
+        }
+
+        // Handle DOM-like objects or objects with custom toString
+        if (value.toString && value.toString !== Object.prototype.toString) {
+          const str = value.toString();
+          if (str !== '[object Object]') {
+            seen.delete(value);
+            return str;
+          }
+        }
+
+        // Format plain objects
+        if (depth >= maxDepth) {
+          seen.delete(value);
+          return '[Object]';
+        }
+
+        const keys = Object.keys(value);
+        if (keys.length === 0) {
+          seen.delete(value);
+          return '{}';
+        }
+
+        const pairs = keys.slice(0, 10).map(key => {
+          try {
+            return `${key}: ${formatValue(value[key], depth + 1, maxDepth, seen)}`;
+          } catch (e) {
+            return `${key}: [Error getting value]`;
+          }
+        });
+
+        const result = keys.length > 10
+          ? `{ ${pairs.join(', ')}, ... ${keys.length - 10} more }`
+          : `{ ${pairs.join(', ')} }`;
+
+        seen.delete(value);
+        return result;
+      } catch (e) {
+        seen.delete(value);
+        return '[Error formatting object]';
+      }
+    }
+
+    return String(value);
+  }
+
+  function formatArguments(args) {
+    return args.map(arg => formatValue(arg)).join(' ');
+  }
+
+  function getGroupPrefix() {
+    return '  '.repeat(consoleState.groupDepth);
+  }
+
+  // Enhanced console methods that work with the existing Swift logger
+  const originalConsole = globalThis.console;
+
+  // Basic logging methods - these will be overridden by Swift but we provide fallbacks
+  ['log', 'error', 'warn', 'info', 'debug', 'trace'].forEach(method => {
+    if (!originalConsole[method]) {
+      originalConsole[method] = function (...args) {
+        // Fallback implementation if Swift doesn't override
+        const formatted = formatArguments(args);
+        const prefix = getGroupPrefix();
+        console._nativeLog?.(method.toUpperCase(), `${prefix}${formatted}`) ||
+          console._print?.(`[${method.toUpperCase()}] ${prefix}${formatted}`);
+      };
+    }
+  });
+
+  // Enhanced console methods
+  Object.assign(globalThis.console, {
+    // Timing methods
+    time(label = 'default') {
+      consoleState.timers.set(label, Date.now());
+    },
+
+    timeEnd(label = 'default') {
+      const startTime = consoleState.timers.get(label);
+      if (startTime !== undefined) {
+        const duration = Date.now() - startTime;
+        consoleState.timers.delete(label);
+        const message = `${label}: ${duration}ms`;
+        const prefix = getGroupPrefix();
+
+        // Use existing log method (which Swift will override)
+        console.log(`${prefix}⏱️  ${message}`);
+      } else {
+        console.warn(`Timer '${label}' does not exist`);
+      }
+    },
+
+    timeLog(label = 'default', ...args) {
+      const startTime = consoleState.timers.get(label);
+      if (startTime !== undefined) {
+        const duration = Date.now() - startTime;
+        const extraArgs = args.length > 0 ? ' ' + formatArguments(args) : '';
+        const message = `${label}: ${duration}ms${extraArgs}`;
+        const prefix = getGroupPrefix();
+        console.log(`${prefix}⏱️  ${message}`);
+      } else {
+        console.warn(`Timer '${label}' does not exist`);
+      }
+    },
+
+    // Counting methods
+    count(label = 'default') {
+      const current = consoleState.counters.get(label) || 0;
+      const newCount = current + 1;
+      consoleState.counters.set(label, newCount);
+      const prefix = getGroupPrefix();
+      console.log(`${prefix}🔢 ${label}: ${newCount}`);
+    },
+
+    countReset(label = 'default') {
+      if (consoleState.counters.has(label)) {
+        consoleState.counters.delete(label);
+      } else {
+        console.warn(`Count for '${label}' does not exist`);
+      }
+    },
+
+    // Grouping methods
+    group(label = '') {
+      const prefix = getGroupPrefix();
+      if (label) {
+        console.log(`${prefix}📁 ${label}`);
+      }
+      consoleState.groupDepth++;
+    },
+
+    groupCollapsed(label = '') {
+      // Same as group for text-based console
+      this.group(label);
+    },
+
+    groupEnd() {
+      if (consoleState.groupDepth > 0) {
+        consoleState.groupDepth--;
+      }
+    },
+
+    // Table method (basic implementation)
+    table(data, columns) {
+      const prefix = getGroupPrefix();
+
+      if (!data || typeof data !== 'object') {
+        console.log(`${prefix}${formatValue(data)}`);
+        return;
+      }
+
+      if (Array.isArray(data)) {
+        console.log(`${prefix}📊 Table:`);
+        data.forEach((row, index) => {
+          if (typeof row === 'object' && row !== null) {
+            const rowData = columns ?
+              columns.reduce((acc, col) => ({ ...acc, [col]: row[col] }), {}) :
+              row;
+            console.log(`${prefix}  ${index}: ${formatValue(rowData)}`);
+          } else {
+            console.log(`${prefix}  ${index}: ${formatValue(row)}`);
+          }
+        });
+      } else {
+        console.log(`${prefix}📊 Table:`);
+        Object.entries(data).forEach(([key, value]) => {
+          console.log(`${prefix}  ${key}: ${formatValue(value)}`);
+        });
+      }
+    },
+
+    // Assertion method
+    assert(condition, ...args) {
+      if (!condition) {
+        const message = args.length > 0 ? formatArguments(args) : 'Assertion failed';
+        const prefix = getGroupPrefix();
+        console.error(`${prefix}❌ Assertion failed: ${message}`);
+      }
+    },
+
+    // Clear method (visual separator)
+    clear() {
+      console.log('\n'.repeat(3) + '🧹 Console cleared' + '\n'.repeat(2));
+    },
+
+    // Directory listing (basic object inspection)
+    dir(obj) {
+      const prefix = getGroupPrefix();
+      console.log(`${prefix}📋 ${formatValue(obj, 0, 5)}`);
+    },
+
+    dirxml(obj) {
+      // Alias for dir in non-DOM environment
+      this.dir(obj);
+    }
+  });
+
   // Blob - binary data container
   globalThis.Blob = class Blob {
     #size = 0;
