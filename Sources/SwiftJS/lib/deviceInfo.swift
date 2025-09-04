@@ -57,8 +57,14 @@ extension JSDeviceInfo {
         }
         var hasher = Insecure.MD5()
         hasher.update(data: address)
-        return JSValue(
-            object: hasher.finalize().map { String(format: "%02hhx", $0) }.joined(),
+            let hashString = hasher.finalize().map { String(format: "%02hhx", $0) }.joined()
+
+            // Convert MD5 hash to UUID format (8-4-4-4-12)
+            let uuidString =
+                "\(hashString.prefix(8))-\(hashString.dropFirst(8).prefix(4))-\(hashString.dropFirst(12).prefix(4))-\(hashString.dropFirst(16).prefix(4))-\(hashString.dropFirst(20))"
+
+            return JSValue(
+                object: uuidString,
             in: context
         )
         

@@ -34,7 +34,7 @@ import JavaScriptCore
 
   func randomBytes(_ length: Int) -> JSValue
 
-  func createHash(_ algorithm: String) -> JSHash?
+  func createHash(_ algorithm: String) -> JSHash
 
   func createHamc(_ algorithm: String, _ secret: JSValue) -> JSHash?
 }
@@ -66,14 +66,18 @@ extension JSCrypto {
 
 extension JSCrypto {
 
-  func createHash(_ algorithm: String) -> JSHash? {
+  func createHash(_ algorithm: String) -> JSHash {
     switch algorithm {
     case "md5": return JSHash(Insecure.MD5())
     case "sha1": return JSHash(Insecure.SHA1())
     case "sha256": return JSHash(SHA256())
     case "sha384": return JSHash(SHA384())
     case "sha512": return JSHash(SHA512())
-    default: return nil
+    default:
+      let context = JSContext.current()!
+      context.exception = JSValue(
+        newErrorFromMessage: "Unknown hash algorithm: \(algorithm)", in: context)
+      return JSHash(SHA256())  // Return a default hash to satisfy protocol, but exception is set
     }
   }
 }

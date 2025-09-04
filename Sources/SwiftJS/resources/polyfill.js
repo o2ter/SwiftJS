@@ -59,23 +59,58 @@
   globalThis.EventTarget = class EventTarget {
     #listeners = {};
 
-    addEventListener(type, listener) {
+    addEventListener(type, listener, options = {}) {
       if (!this.#listeners[type]) {
         this.#listeners[type] = [];
       }
-      this.#listeners[type].push(listener);
+
+      // Handle options
+      const once = typeof options === 'object' ? options.once : false;
+
+      const wrappedListener = once ?
+        (event) => {
+          try {
+            listener(event);
+          } finally {
+            this.removeEventListener(type, wrappedListener);
+          }
+        } :
+        listener;
+
+      // Store original listener reference for removal
+      wrappedListener._originalListener = listener;
+
+      this.#listeners[type].push(wrappedListener);
     }
 
     removeEventListener(type, listener) {
       if (!this.#listeners[type]) return;
-      this.#listeners[type] = this.#listeners[type].filter(l => l !== listener);
+      this.#listeners[type] = this.#listeners[type].filter(l =>
+        l !== listener && l._originalListener !== listener
+      );
     }
 
     dispatchEvent(event) {
-      if (!this.#listeners[event.type]) return;
-      for (const listener of this.#listeners[event.type]) {
-        listener(event);
+      if (!this.#listeners[event.type]) return true;
+
+      // Set event target properties
+      event.target = this;
+      event.currentTarget = this;
+
+      // Copy listeners array to avoid issues with modifications during dispatch
+      const listeners = [...this.#listeners[event.type]];
+
+      for (const listener of listeners) {
+        try {
+          listener(event);
+        } catch (error) {
+          // In browsers, listener errors don't stop other listeners from executing
+          // and don't propagate - they're usually logged to console
+          console.error('Error in event listener:', error);
+        }
       }
+
+      return !event.defaultPrevented;
     }
   };
 
@@ -168,6 +203,11 @@
     }
 
     encode(string = '') {
+      // Convert non-string inputs to strings like browsers do
+      if (typeof string !== 'string') {
+        string = String(string);
+      }
+
       const utf8 = new Uint8Array(TextEncoder.#getByteLength(string));
       let byteIndex = 0;
 
@@ -993,6 +1033,19 @@
       }
     }
 
+    // Validate header name according to HTTP specification
+    #validateHeaderName(name) {
+      if (typeof name !== 'string' || name === '') {
+        throw new TypeError('Invalid header name: must be a non-empty string');
+      }
+
+      // Check for invalid characters
+      // HTTP header names cannot contain spaces, tabs, newlines, or other control characters
+      if (/[\s\x00-\x1F\x7F]/.test(name)) {
+        throw new TypeError('Invalid header name: contains invalid characters');
+      }
+    }
+
     #initializeHeaders(init) {
       if (init instanceof Headers) {
         for (const [key, value] of init[SYMBOLS.headersMap]) {
@@ -1000,16 +1053,19 @@
         }
       } else if (Array.isArray(init)) {
         for (const [key, value] of init) {
+          this.#validateHeaderName(key);
           this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
         }
       } else if (typeof init === 'object') {
         for (const [key, value] of Object.entries(init)) {
+          this.#validateHeaderName(key);
           this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
         }
       }
     }
 
     append(name, value) {
+      this.#validateHeaderName(name);
       const normalizedName = name.toLowerCase();
       const existing = this[SYMBOLS.headersMap].get(normalizedName);
       const newValue = existing ? `${existing}, ${value}` : String(value);
@@ -1017,18 +1073,22 @@
     }
 
     delete(name) {
+      this.#validateHeaderName(name);
       this[SYMBOLS.headersMap].delete(name.toLowerCase());
     }
 
     get(name) {
+      this.#validateHeaderName(name);
       return this[SYMBOLS.headersMap].get(name.toLowerCase()) || null;
     }
 
     has(name) {
+      this.#validateHeaderName(name);
       return this[SYMBOLS.headersMap].has(name.toLowerCase());
     }
 
     set(name, value) {
+      this.#validateHeaderName(name);
       this[SYMBOLS.headersMap].set(name.toLowerCase(), String(value));
     }
 
@@ -1440,6 +1500,30 @@
     }
   };
 
+  // Helper function to get status text from status code
+  function getStatusText(status) {
+    const statusTexts = {
+      100: 'Continue',
+      101: 'Switching Protocols',
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      204: 'No Content',
+      301: 'Moved Permanently',
+      302: 'Found',
+      304: 'Not Modified',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      403: 'Forbidden',
+      404: 'Not Found',
+      405: 'Method Not Allowed',
+      500: 'Internal Server Error',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable'
+    };
+    return statusTexts[status] || '';
+  }
+
   // fetch - HTTP request function
   globalThis.fetch = async function fetch(input, init = {}) {
     const request = new Request(input, init);
@@ -1505,7 +1589,7 @@
     // Create response with streaming body
     const response = new Response(responseBody, {
       status: result.statusCode,
-      statusText: '',
+      statusText: getStatusText(result.statusCode),
       headers: result.allHeaderFields,
       url: result.url || request.url
     });

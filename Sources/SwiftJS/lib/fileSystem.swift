@@ -40,7 +40,9 @@ import JavaScriptCore
     }
     
     static var temporaryDirectory: String {
-        return NSTemporaryDirectory()
+        let tempDir = NSTemporaryDirectory()
+        // Remove trailing slash if present
+        return tempDir.hasSuffix("/") ? String(tempDir.dropLast()) : tempDir
     }
     
     static var currentDirectoryPath: String {

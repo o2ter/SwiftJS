@@ -46,6 +46,11 @@ All native objects exposed to JavaScript must conform to `JSExport`:
 }
 ```
 
+**Important:** Swift static properties (including computed properties with getters) are automatically exposed as JavaScript functions, not properties. This means:
+- Swift `static var myProperty: String { get }` becomes JavaScript `myObject.myProperty()` (callable function)
+- Swift `static func myMethod() -> String` also becomes JavaScript `myObject.myMethod()` (callable function)
+- Tests should expect and call these as functions: `typeof myObject.myProperty === 'function'` and `myObject.myProperty()`
+
 ### Async/Promise Integration
 Swift async functions are automatically bridged to JavaScript Promises:
 ```swift

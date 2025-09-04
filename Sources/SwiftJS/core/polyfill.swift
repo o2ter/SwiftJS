@@ -258,7 +258,8 @@ extension SwiftJS {
         }
         self.globalObject["clearTimeout"] = .init(in: self) { arguments, _ -> Void in
             guard let id = arguments[0].numberValue.map(Int.init) else {
-                throw SwiftJS.Value(newErrorFromMessage: "Invalid type of timeoutID", in: self)
+                // Silently ignore invalid IDs like browsers do
+                return
             }
             self.removeTimer(identifier: id)
         }
@@ -274,7 +275,8 @@ extension SwiftJS {
         }
         self.globalObject["clearInterval"] = .init(in: self) { arguments, _ -> Void in
             guard let id = arguments[0].numberValue.map(Int.init) else {
-                throw SwiftJS.Value(newErrorFromMessage: "Invalid type of intervalID", in: self)
+                // Silently ignore invalid IDs like browsers do
+                return
             }
             self.removeTimer(identifier: id)
         }
