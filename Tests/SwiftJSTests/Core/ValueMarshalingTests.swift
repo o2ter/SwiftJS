@@ -158,7 +158,8 @@ final class ValueMarshalingTests: XCTestCase {
         let result = context.evaluateScript("new Date('2023-01-01T00:00:00.000Z')")
         
         XCTAssertTrue(result.isObject)
-        XCTAssertEqual(result["getFullYear"].call(withArguments: []).numberValue, 2023)
+        // Use invokeMethod instead of call to preserve 'this' context
+        XCTAssertEqual(result.invokeMethod("getFullYear", withArguments: []).numberValue, 2023)
     }
     
     func testRegExpMarshaling() {
