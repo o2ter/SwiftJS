@@ -192,7 +192,7 @@ SwiftJS provides comprehensive JavaScript APIs:
 ### Web APIs
 - **Crypto**: `crypto.randomUUID()`, `crypto.randomBytes()`, `crypto.getRandomValues()`
 - **Console**: `console.log/warn/error/info` with proper formatting
-- **Fetch**: `fetch()` for HTTP requests (partial implementation)
+- **Fetch**: `fetch()` for HTTP requests (core functionality, excludes browser security features)
 - **TextEncoder/TextDecoder**: UTF-8 encoding/decoding
 - **Timers**: `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`
 - **Event**: `Event`, `EventTarget`, `addEventListener`

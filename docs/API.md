@@ -401,6 +401,8 @@ xhr.upload.onprogress = function(event) {
 };
 ```
 
+**Note:** SwiftJS XMLHttpRequest focuses on core HTTP functionality. Browser-specific features like `withCredentials` and `overrideMimeType()` are not implemented as they're not relevant in mobile app environments.
+
 #### Fetch API
 
 ```javascript
@@ -445,6 +447,15 @@ while (true) {
     console.log('Received chunk:', value);
 }
 ```
+
+**Note:** SwiftJS implements the core Fetch API for practical HTTP requests. The following web browser-specific features are not implemented:
+- CORS enforcement (`mode`, `credentials` properties are not enforced)
+- HTTP cache control (`cache` property is not used)
+- Automatic redirect handling (`redirect` property is not used)
+- Subresource integrity validation (`integrity` property is not used)
+- Referrer policy (`referrer` property is not used)
+
+These limitations are intentional for mobile app environments where such browser security policies are not applicable.
 
 #### Headers
 
