@@ -178,7 +178,7 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 
 ### JavaScriptCore Behavior Documentation
 When discovering important JavaScriptCore facts or behaviors during development:
-- Add detailed notes to this file under relevant sections
+- Add detailed notes to `.github/copilot-instructions.md` under relevant sections
 - Include code examples demonstrating the behavior
 - Explain why the behavior occurs and its implications
 - Note any workarounds or special handling required
