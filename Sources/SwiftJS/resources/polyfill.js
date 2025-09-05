@@ -798,7 +798,6 @@
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let result = '';
 
-    // Process in groups of 4 characters, handling padding properly
     for (let i = 0; i < base64.length; i += 4) {
       const char1 = base64.charAt(i);
       const char2 = base64.charAt(i + 1);
@@ -810,17 +809,21 @@
       const encoded3 = char3 === '=' ? 0 : chars.indexOf(char3);
       const encoded4 = char4 === '=' ? 0 : chars.indexOf(char4);
 
+      if (encoded1 === -1 || encoded2 === -1 || (char3 !== '=' && encoded3 === -1) || (char4 !== '=' && encoded4 === -1)) {
+        throw new Error('Failed to execute \'atob\': The string to be decoded is not correctly encoded.');
+      }
+
       const bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
 
-      // Always add the first byte
+      // Always decode the first byte
       result += String.fromCharCode((bitmap >> 16) & 255);
       
-      // Add second byte if third character is not padding
+      // Decode second byte unless we have double padding
       if (char3 !== '=') {
         result += String.fromCharCode((bitmap >> 8) & 255);
       }
       
-      // Add third byte if fourth character is not padding
+      // Decode third byte unless we have any padding
       if (char4 !== '=') {
         result += String.fromCharCode(bitmap & 255);
       }
