@@ -12,7 +12,8 @@
     headersMap: Symbol('Headers._headers'),
     requestBodyText: Symbol('Request._bodyText'),
     streamInternal: Symbol('Stream._internal'),
-    abortSignalMarkAborted: Symbol('AbortSignal._markAborted')
+    abortSignalMarkAborted: Symbol('AbortSignal._markAborted'),
+    filePath: Symbol('File._filePath')
   };
 
   // Process API - provides Node.js-like process object
@@ -1250,7 +1251,7 @@
       super(parts, options);
       this.#name = String(name || '');
       this.#lastModified = options.lastModified || Date.now();
-      this.#filePath = options._filePath || null; // Internal option for file system files
+      this.#filePath = options[SYMBOLS.filePath] || null; // Internal option for file system files
       this[Symbol.toStringTag] = 'File';
     }
 
@@ -1338,7 +1339,7 @@
       return new File([], name, {
         type: getMimeType(ext),
         lastModified: stats.lastModified ? stats.lastModified.getTime() : Date.now(),
-        _filePath: path
+        [SYMBOLS.filePath]: path
       });
     }
   };
