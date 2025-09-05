@@ -798,32 +798,32 @@
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let result = '';
 
-    // Remove padding for processing
-    const paddingCount = (base64.match(/=/g) || []).length;
-    base64 = base64.replace(/=/g, '');
-
+    // Process in groups of 4 characters, handling padding properly
     for (let i = 0; i < base64.length; i += 4) {
-      const encoded1 = chars.indexOf(base64.charAt(i));
-      const encoded2 = chars.indexOf(base64.charAt(i + 1));
-      const encoded3 = i + 2 < base64.length ? chars.indexOf(base64.charAt(i + 2)) : -1;
-      const encoded4 = i + 3 < base64.length ? chars.indexOf(base64.charAt(i + 3)) : -1;
+      const char1 = base64.charAt(i);
+      const char2 = base64.charAt(i + 1);
+      const char3 = base64.charAt(i + 2);
+      const char4 = base64.charAt(i + 3);
 
-      // Handle the case where we don't have enough characters
-      const e3 = encoded3 === -1 ? 0 : encoded3;
-      const e4 = encoded4 === -1 ? 0 : encoded4;
+      const encoded1 = chars.indexOf(char1);
+      const encoded2 = chars.indexOf(char2);
+      const encoded3 = char3 === '=' ? 0 : chars.indexOf(char3);
+      const encoded4 = char4 === '=' ? 0 : chars.indexOf(char4);
 
-      const bitmap = (encoded1 << 18) | (encoded2 << 12) | (e3 << 6) | e4;
+      const bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
 
+      // Always add the first byte
       result += String.fromCharCode((bitmap >> 16) & 255);
-      if (encoded3 !== -1) result += String.fromCharCode((bitmap >> 8) & 255);
-      if (encoded4 !== -1) result += String.fromCharCode(bitmap & 255);
-    }
-
-    // Handle padding by removing extra characters
-    if (paddingCount === 1) {
-      result = result.slice(0, -1);
-    } else if (paddingCount === 2) {
-      result = result.slice(0, -2);
+      
+      // Add second byte if third character is not padding
+      if (char3 !== '=') {
+        result += String.fromCharCode((bitmap >> 8) & 255);
+      }
+      
+      // Add third byte if fourth character is not padding
+      if (char4 !== '=') {
+        result += String.fromCharCode(bitmap & 255);
+      }
     }
 
     return result;
