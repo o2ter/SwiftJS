@@ -245,3 +245,45 @@ let script = """
 - `const` and `let` declarations cannot be redeclared, causing `SyntaxError` on subsequent runs
 - Always use `var` for variables in scripts that will be executed multiple times
 - This applies to performance tests and any code that may run repeatedly in the same context
+
+### **CRITICAL:** Object Literal vs Block Statement Ambiguity
+**A fundamental JavaScript parsing rule that frequently causes test failures:**
+
+```swift
+// ❌ WRONG - bare object literal parsed as block statement
+let script = """
+    {
+        original: original,
+        encoded: encoded,
+        decoded: decoded
+    }
+"""
+// Returns: undefined (parsed as labeled statements in a block)
+
+// ✅ CORRECT - parentheses force object literal parsing
+let script = """
+    ({
+        original: original,
+        encoded: encoded,
+        decoded: decoded
+    })
+"""
+// Returns: object with properties
+```
+
+**Why this happens:**
+- JavaScript parser interprets `{` at start of statement as beginning of block statement
+- `original:`, `encoded:`, etc. become statement labels, not object properties
+- Expressions after labels are evaluated but the block returns `undefined`
+- Wrapping in parentheses `({ ... })` forces expression context, creating object literal
+- This is standard JavaScript behavior, not a SwiftJS limitation
+
+**Common symptoms:**
+- Test assertions fail with "undefined" when expecting object properties
+- `result["property"]` returns undefined even though script logic appears correct
+- Functions like `btoa`/`atob` work individually but fail in object return contexts
+
+**Testing implications:**
+- Always wrap object literals in parentheses when they're the main return value
+- Particularly important in test scripts that return result objects for assertion
+- Use `({ ... })` pattern consistently in all test object returns

@@ -515,12 +515,12 @@ final class TextEncodingTests: XCTestCase {
                 const original = 'Hello, World!';
                 const encoded = btoa(original);
                 const decoded = atob(encoded);
-                {
+                ({
                     original: original,
                     encoded: encoded,
                     decoded: decoded,
                     matches: original === decoded
-                }
+                })
             """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
@@ -535,9 +535,9 @@ final class TextEncodingTests: XCTestCase {
         let script = """
                 try {
                     btoa('Hello, World! 🌍');  // Contains Unicode character
-                    { success: true, error: null }
+                    ({ success: true, error: null })
                 } catch (error) {
-                    { success: false, error: error.message }
+                    ({ success: false, error: error.message })
                 }
             """
         let context = SwiftJS()
@@ -636,13 +636,13 @@ final class TextEncodingTests: XCTestCase {
                 const dataURL = 'data:text/plain;base64,' + base64;
                 const decoded = atob(base64);
                 
-                {
+                ({
                     original: text,
                     base64: base64,
                     dataURL: dataURL,
                     decoded: decoded,
                     roundTripSuccess: text === decoded
-                }
+                })
             """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
