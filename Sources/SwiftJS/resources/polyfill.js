@@ -2666,7 +2666,8 @@
 
     enqueue(chunk) {
       if (this.#internal.state !== 'readable') {
-        throw new TypeError('Cannot enqueue chunk after stream is closed or errored');
+        // According to Web Streams spec, silently ignore enqueue after close/error
+        return;
       }
 
       // Check if we're over the high water mark (backpressure)
