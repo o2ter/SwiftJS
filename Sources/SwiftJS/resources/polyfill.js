@@ -790,7 +790,7 @@
     }
 
     // Remove whitespace and validate base64 characters
-    base64 = base64.replace(/\\s/g, '');
+    base64 = base64.replace(/\s/g, '');
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
       throw new Error('Failed to execute \'atob\': The string to be decoded is not correctly encoded.');
     }
