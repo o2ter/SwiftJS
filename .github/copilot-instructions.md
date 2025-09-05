@@ -166,7 +166,25 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - SwiftJSRunner supports both file execution and eval mode: `swift run SwiftJSRunner -e "console.log('test')"`
 - All SwiftJS APIs are available in SwiftJSRunner including crypto, fetch, file system, and timers
 
-## AI Agent Test Execution Guidelines
+## AI Agent Guidelines
+
+### Implementation Verification
+**CRITICAL:** Always verify implementation behavior before writing documentation or making assumptions:
+- Test actual behavior in SwiftJS runtime before documenting APIs
+- Run code examples to confirm they work as described
+- Use SwiftJSRunner or test cases to validate functionality
+- Don't rely on external documentation without verification - JavaScriptCore has unique behaviors
+- Document any discrepancies between expected and actual behavior
+
+### JavaScriptCore Behavior Documentation
+When discovering important JavaScriptCore facts or behaviors during development:
+- Add detailed notes to this file under relevant sections
+- Include code examples demonstrating the behavior
+- Explain why the behavior occurs and its implications
+- Note any workarounds or special handling required
+- Mark critical behaviors with **CRITICAL:** or **Important:** tags
+
+### Test Execution Guidelines
 When running tests as an AI agent:
 - Wait for the test task to complete before proceeding
 - If you cannot see the output or the task appears to be still running, the agent is required to ask the user to confirm the task has completed or stuck
