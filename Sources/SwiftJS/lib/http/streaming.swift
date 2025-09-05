@@ -135,7 +135,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         // Execute request and stream response
         let response = try await httpClient.execute(
             httpRequest,
-            deadline: .now() + .seconds(30)
+            deadline: .now() + .seconds(3)
         )
         
         // Stream response body in a detached task to avoid data races
@@ -187,7 +187,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         // Execute request and stream response
         let response = try await httpClient.execute(
             httpRequest,
-            deadline: .now() + .seconds(30)
+            deadline: .now() + .seconds(3)
         )
         
         // Stream response body in a detached task to avoid data races

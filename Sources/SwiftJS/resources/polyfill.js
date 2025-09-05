@@ -1151,6 +1151,7 @@
     #redirect;
     #referrer;
     #integrity;
+    #signal;
     #bodyUsed = false;
 
     constructor(input, init = {}) {
@@ -1173,6 +1174,7 @@
       this.#redirect = request.redirect;
       this.#referrer = request.referrer;
       this.#integrity = request.integrity;
+      this.#signal = request.signal;
     }
 
     #initializeFromUrl(url, init) {
@@ -1186,6 +1188,7 @@
       this.#redirect = init.redirect || 'follow';
       this.#referrer = init.referrer || 'about:client';
       this.#integrity = init.integrity || '';
+      this.#signal = init.signal || null;
     }
 
     // Getters
@@ -1199,6 +1202,7 @@
     get redirect() { return this.#redirect; }
     get referrer() { return this.#referrer; }
     get integrity() { return this.#integrity; }
+    get signal() { return this.#signal; }
     get bodyUsed() { return this.#bodyUsed; }
 
     #setBodyUsed() {
@@ -1551,6 +1555,14 @@
   // fetch - HTTP request function
   globalThis.fetch = async function fetch(input, init = {}) {
     const request = new Request(input, init);
+
+    // Check if the request is already aborted
+    if (request.signal && request.signal.aborted) {
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
+
     const urlRequest = new __APPLE_SPEC__.URLRequest(request.url);
     urlRequest.httpMethod = request.method;
 
@@ -1584,41 +1596,89 @@
 
     // Create a streaming response body using progress handler
     let responseBodyController = null;
+    let aborted = false;
     const responseBody = new ReadableStream({
       start(controller) {
         responseBodyController = controller;
       }
     });
 
+    // Set up abort handling
+    let abortPromise = null;
+    if (request.signal) {
+      abortPromise = new Promise((_, reject) => {
+        const abortHandler = () => {
+          aborted = true;
+          if (responseBodyController) {
+            const abortError = new Error('The operation was aborted');
+            abortError.name = 'AbortError';
+            responseBodyController.error(abortError);
+            responseBodyController = null;
+          }
+          const abortError = new Error('The operation was aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        };
+
+        if (request.signal.aborted) {
+          // Already aborted
+          setTimeout(abortHandler, 0);
+        } else {
+          request.signal.addEventListener('abort', abortHandler);
+        }
+      });
+    }
+
     // Use progress handler to stream response data
     const progressHandler = function (chunk, isComplete) {
-      if (responseBodyController) {
-        if (chunk && chunk.length > 0) {
-          responseBodyController.enqueue(chunk);
-        }
-        if (isComplete) {
-          responseBodyController.close();
-          responseBodyController = null;
-        }
+      if (aborted || !responseBodyController) return;
+
+      if (chunk && chunk.length > 0) {
+        responseBodyController.enqueue(chunk);
+      }
+      if (isComplete) {
+        responseBodyController.close();
+        responseBodyController = null;
       }
     };
 
-    const result = await session.httpRequestWithRequest(
-      urlRequest,
-      bodyStream,       // bodyStream parameter
-      progressHandler,  // progressHandler for streaming response
-      null              // completionHandler parameter
-    );
+    try {
+      // Race the HTTP request with the abort signal
+      const requestPromise = session.httpRequestWithRequest(
+        urlRequest,
+        bodyStream,       // bodyStream parameter
+        progressHandler,  // progressHandler for streaming response
+        null              // completionHandler parameter
+      );
 
-    // Create response with streaming body
-    const response = new Response(responseBody, {
-      status: result.statusCode,
-      statusText: getStatusText(result.statusCode),
-      headers: result.allHeaderFields,
-      url: result.url || request.url
-    });
+      const result = abortPromise ?
+        await Promise.race([requestPromise, abortPromise]) :
+        await requestPromise;
 
-    return response;
+      // If we got here and the request was aborted, throw
+      if (aborted) {
+        const abortError = new Error('The operation was aborted');
+        abortError.name = 'AbortError';
+        throw abortError;
+      }
+
+      // Create response with streaming body
+      const response = new Response(responseBody, {
+        status: result.statusCode,
+        statusText: getStatusText(result.statusCode),
+        headers: result.allHeaderFields,
+        url: result.url || request.url
+      });
+
+      return response;
+    } catch (error) {
+      // Make sure to close the stream on any error
+      if (responseBodyController) {
+        responseBodyController.error(error);
+        responseBodyController = null;
+      }
+      throw error;
+    }
   };
 
   // FormData - form data representation
