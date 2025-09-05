@@ -440,18 +440,6 @@
       return results;
     }
 
-    static watch(path, options = {}) {
-      // Basic file watching - in a real implementation this would use platform-specific APIs
-      console.warn('FileSystem.watch() is not implemented - polling not supported in this environment');
-
-      // Return a basic EventTarget for API compatibility
-      return new class FileWatcher extends EventTarget {
-        close() {
-          // No-op
-        }
-      };
-    }
-
     // Path utilities
     static join(...parts) {
       return parts.join('/').replace(/\/+/g, '/');
@@ -1881,10 +1869,6 @@
       return Object.keys(headers)
         .map(key => `${key}: ${headers[key]}`)
         .join('\r\n') + '\r\n';
-    }
-
-    overrideMimeType(mime) {
-      // Not implemented
     }
 
     #setReadyState(state) {
