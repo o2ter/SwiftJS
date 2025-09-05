@@ -73,7 +73,7 @@ js.globalObject["swiftString"] = "Hello from Swift"
 // JavaScript to Swift
 js.evaluateScript("var jsResult = { numbers: [1, 2, 3], text: 'Hello' }")
 let jsObject = js.globalObject["jsResult"]
-let numbers = jsObject["numbers"].toArray() // [1, 2, 3]
+let numbers = jsObject["numbers"] // SwiftJS.Value representing the array
 let text = jsObject["text"].toString() // "Hello"
 ```
 
@@ -87,9 +87,7 @@ let js = SwiftJS()
 // Cryptography
 js.evaluateScript("""
     const id = crypto.randomUUID();
-    const hash = crypto.subtle.digest('SHA-256', 'hello world');
     console.log('ID:', id);
-    console.log('Hash:', hash);
 """)
 
 // File System
@@ -192,7 +190,7 @@ SwiftJS provides comprehensive JavaScript APIs:
 - **Error handling**: Try/catch with proper stack traces
 
 ### Web APIs
-- **Crypto**: `crypto.randomUUID()`, `crypto.subtle.*` (Web Crypto API)
+- **Crypto**: `crypto.randomUUID()`, `crypto.randomBytes()`, `crypto.getRandomValues()`
 - **Console**: `console.log/warn/error/info` with proper formatting
 - **Fetch**: `fetch()` for HTTP requests (partial implementation)
 - **TextEncoder/TextDecoder**: UTF-8 encoding/decoding

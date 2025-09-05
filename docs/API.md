@@ -61,7 +61,7 @@ public struct Value {
     // Value type checking
     var isUndefined: Bool
     var isNull: Bool
-    var isBoolean: Bool
+    var isBool: Bool
     var isNumber: Bool
     var isString: Bool
     var isArray: Bool
@@ -69,11 +69,10 @@ public struct Value {
     var isFunction: Bool
     
     // Value conversion
-    var boolValue: Bool
+    var boolValue: Bool?
     var numberValue: Double?
     var stringValue: String?
-    var arrayValue: [SwiftJS.Value]?
-    var dictionaryValue: [String: SwiftJS.Value]?
+    var dateValue: Date?
     
     // Method calls
     func call(withArguments args: [Any]) -> SwiftJS.Value
@@ -140,7 +139,7 @@ js.globalObject["swiftString"] = "Hello from Swift"
 // JavaScript to Swift
 js.evaluateScript("var jsData = {numbers: [1,2,3], text: 'Hello'}")
 let jsObject = js.globalObject["jsData"]
-let numbers = jsObject["numbers"].arrayValue // [1, 2, 3]
+let numbers = jsObject["numbers"] // SwiftJS.Value representing the array
 let text = jsObject["text"].stringValue // "Hello"
 ```
 
