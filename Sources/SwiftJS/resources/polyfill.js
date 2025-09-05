@@ -48,6 +48,457 @@
     }
   };
 
+  // Path - Path manipulation utilities
+  globalThis.Path = class Path {
+    static sep = '/';  // Path separator (Unix-style for consistency)
+
+    static join(...segments) {
+      if (segments.length === 0) return '.';
+
+      // Filter out empty segments and join with separator
+      const parts = segments
+        .filter(segment => segment && typeof segment === 'string')
+        .join(this.sep)
+        .split(this.sep)
+        .filter(part => part !== '');
+
+      // Handle absolute paths
+      const isAbsolute = segments[0] && segments[0].startsWith('/');
+      const result = parts.join(this.sep);
+
+      return isAbsolute ? '/' + result : result || '.';
+    }
+
+    static resolve(...segments) {
+      let resolvedPath = '';
+      let resolvedAbsolute = false;
+
+      for (let i = segments.length - 1; i >= 0 && !resolvedAbsolute; i--) {
+        const path = segments[i];
+        if (path && typeof path === 'string') {
+          resolvedPath = path + '/' + resolvedPath;
+          resolvedAbsolute = path.startsWith('/');
+        }
+      }
+
+      if (!resolvedAbsolute) {
+        resolvedPath = __APPLE_SPEC__.FileSystem.currentDirectoryPath + '/' + resolvedPath;
+      }
+
+      // Normalize the path
+      return this.normalize(resolvedPath);
+    }
+
+    static normalize(path) {
+      if (!path || typeof path !== 'string') return '.';
+
+      const isAbsolute = path.startsWith('/');
+      const parts = path.split('/').filter(part => part !== '');
+      const normalizedParts = [];
+
+      for (const part of parts) {
+        if (part === '..') {
+          if (normalizedParts.length > 0 && normalizedParts[normalizedParts.length - 1] !== '..') {
+            normalizedParts.pop();
+          } else if (!isAbsolute) {
+            normalizedParts.push('..');
+          }
+        } else if (part !== '.') {
+          normalizedParts.push(part);
+        }
+      }
+
+      const result = normalizedParts.join('/');
+      if (isAbsolute) {
+        return '/' + result;
+      }
+      return result || '.';
+    }
+
+    static dirname(path) {
+      if (!path || typeof path !== 'string') return '.';
+      const normalized = this.normalize(path);
+      const lastSlash = normalized.lastIndexOf('/');
+
+      if (lastSlash === -1) return '.';
+      if (lastSlash === 0) return '/';
+
+      return normalized.substring(0, lastSlash);
+    }
+
+    static basename(path, ext = '') {
+      if (!path || typeof path !== 'string') return '';
+      const normalized = this.normalize(path);
+      const lastSlash = normalized.lastIndexOf('/');
+      const basename = lastSlash === -1 ? normalized : normalized.substring(lastSlash + 1);
+
+      if (ext && basename.endsWith(ext)) {
+        return basename.substring(0, basename.length - ext.length);
+      }
+
+      return basename;
+    }
+
+    static extname(path) {
+      if (!path || typeof path !== 'string') return '';
+      const basename = this.basename(path);
+      const lastDot = basename.lastIndexOf('.');
+
+      if (lastDot === -1 || lastDot === 0) return '';
+      return basename.substring(lastDot);
+    }
+
+    static isAbsolute(path) {
+      return typeof path === 'string' && path.startsWith('/');
+    }
+  };
+
+  // FileSystem - Direct file system operations (non-web standard)
+  globalThis.FileSystem = class FileSystem {
+    // Directory utilities
+    static get home() { return __APPLE_SPEC__.FileSystem.homeDirectory(); }
+    static get temp() { return __APPLE_SPEC__.FileSystem.temporaryDirectory(); }
+    static get cwd() { return __APPLE_SPEC__.FileSystem.currentDirectoryPath(); }
+
+    static chdir(path) {
+      return __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(path);
+    }
+
+    // Basic file operations
+    static exists(path) {
+      return __APPLE_SPEC__.FileSystem.exists(path);
+    }
+
+    static isFile(path) {
+      return __APPLE_SPEC__.FileSystem.isFile(path);
+    }
+
+    static isDirectory(path) {
+      return __APPLE_SPEC__.FileSystem.isDirectory(path);
+    }
+
+    static stat(path) {
+      return __APPLE_SPEC__.FileSystem.stat(path);
+    }
+
+    // Reading operations
+    static readText(path, encoding = 'utf-8') {
+      return __APPLE_SPEC__.FileSystem.readFile(path);
+    }
+
+    static readBytes(path) {
+      return __APPLE_SPEC__.FileSystem.readFileData(path);
+    }
+
+    static async readFile(path, options = {}) {
+      const { encoding = 'utf-8', flag = 'r' } = options;
+
+      if (!this.exists(path)) {
+        throw new Error(`File not found: ${path}`);
+      }
+
+      if (!this.isFile(path)) {
+        throw new Error(`Not a file: ${path}`);
+      }
+
+      if (encoding === null || encoding === 'binary') {
+        // Return Uint8Array for binary data
+        const data = this.readBytes(path);
+        return data ? data.typedArrayBytes : new Uint8Array(0);
+      } else {
+        // Return string for text data
+        return this.readText(path) || '';
+      }
+    }
+
+    static readDir(path) {
+      return __APPLE_SPEC__.FileSystem.readDirectory(path) || [];
+    }
+
+    // Writing operations
+    static writeText(path, content, options = {}) {
+      const { flag = 'w' } = options;
+      return __APPLE_SPEC__.FileSystem.writeFile(path, String(content));
+    }
+
+    static writeBytes(path, data) {
+      return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
+    }
+
+    static async writeFile(path, data, options = {}) {
+      const { encoding = 'utf-8', flag = 'w' } = options;
+
+      if (typeof data === 'string') {
+        return this.writeText(path, data, options);
+      } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+        return this.writeBytes(path, data);
+      } else if (data instanceof Blob) {
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        return this.writeBytes(path, bytes);
+      } else {
+        // Convert to string
+        return this.writeText(path, String(data), options);
+      }
+    }
+
+    // Directory operations
+    static mkdir(path, options = {}) {
+      const { recursive = true } = options;
+      return __APPLE_SPEC__.FileSystem.createDirectory(path);
+    }
+
+    static rmdir(path, options = {}) {
+      const { recursive = false } = options;
+
+      if (!this.exists(path)) {
+        throw new Error(`Directory not found: ${path}`);
+      }
+
+      if (!this.isDirectory(path)) {
+        throw new Error(`Not a directory: ${path}`);
+      }
+
+      if (!recursive) {
+        const contents = this.readDir(path);
+        if (contents.length > 0) {
+          throw new Error(`Directory not empty: ${path}`);
+        }
+      }
+
+      __APPLE_SPEC__.FileSystem.removeItem(path);
+      return true;
+    }
+
+    // File/directory manipulation
+    static remove(path) {
+      if (!this.exists(path)) {
+        throw new Error(`Path not found: ${path}`);
+      }
+      __APPLE_SPEC__.FileSystem.removeItem(path);
+      return true;
+    }
+
+    static copy(src, dest, options = {}) {
+      const { overwrite = false } = options;
+
+      if (!this.exists(src)) {
+        throw new Error(`Source not found: ${src}`);
+      }
+
+      if (this.exists(dest) && !overwrite) {
+        throw new Error(`Destination already exists: ${dest}`);
+      }
+
+      return __APPLE_SPEC__.FileSystem.copyItem(src, dest);
+    }
+
+    static move(src, dest, options = {}) {
+      const { overwrite = false } = options;
+
+      if (!this.exists(src)) {
+        throw new Error(`Source not found: ${src}`);
+      }
+
+      if (this.exists(dest) && !overwrite) {
+        throw new Error(`Destination already exists: ${dest}`);
+      }
+
+      return __APPLE_SPEC__.FileSystem.moveItem(src, dest);
+    }
+
+    // Stream operations for large files
+    static createReadStream(path, options = {}) {
+      const { encoding = null, start = 0, end = undefined } = options;
+
+      if (!this.exists(path)) {
+        throw new Error(`File not found: ${path}`);
+      }
+
+      if (!this.isFile(path)) {
+        throw new Error(`Not a file: ${path}`);
+      }
+
+      return new ReadableStream({
+        start(controller) {
+          try {
+            const data = __APPLE_SPEC__.FileSystem.readFileData(path);
+            if (!data) {
+              controller.error(new Error(`Failed to read file: ${path}`));
+              return;
+            }
+
+            const bytes = data.typedArrayBytes;
+            const startByte = Math.max(0, start);
+            const endByte = end !== undefined ? Math.min(bytes.byteLength, end + 1) : bytes.byteLength;
+
+            if (startByte >= endByte) {
+              controller.close();
+              return;
+            }
+
+            // Stream in chunks
+            const chunkSize = 64 * 1024; // 64KB chunks
+            let offset = startByte;
+
+            while (offset < endByte) {
+              const chunkEnd = Math.min(offset + chunkSize, endByte);
+              const chunk = bytes.slice(offset, chunkEnd);
+
+              if (encoding === null) {
+                controller.enqueue(new Uint8Array(chunk));
+              } else {
+                const text = new TextDecoder(encoding).decode(new Uint8Array(chunk));
+                controller.enqueue(text);
+              }
+
+              offset = chunkEnd;
+            }
+
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        }
+      });
+    }
+
+    static createWriteStream(path, options = {}) {
+      const { encoding = 'utf-8', flags = 'w' } = options;
+      let chunks = [];
+
+      return new WritableStream({
+        write(chunk) {
+          if (typeof chunk === 'string') {
+            chunks.push(new TextEncoder().encode(chunk));
+          } else if (chunk instanceof Uint8Array) {
+            chunks.push(chunk);
+          } else if (chunk instanceof ArrayBuffer) {
+            chunks.push(new Uint8Array(chunk));
+          } else if (ArrayBuffer.isView(chunk)) {
+            chunks.push(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+          } else {
+            chunks.push(new TextEncoder().encode(String(chunk)));
+          }
+        },
+
+        close() {
+          // Combine all chunks and write to file
+          let totalLength = 0;
+          chunks.forEach(chunk => totalLength += chunk.byteLength);
+
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          chunks.forEach(chunk => {
+            combined.set(chunk, offset);
+            offset += chunk.byteLength;
+          });
+
+          if (!__APPLE_SPEC__.FileSystem.writeFileData(path, combined)) {
+            throw new Error(`Failed to write file: ${path}`);
+          }
+          chunks = [];
+        },
+
+        abort() {
+          chunks = [];
+        }
+      });
+    }
+
+    // Utility methods
+    static async glob(pattern, options = {}) {
+      // Simple glob implementation - could be enhanced
+      const { cwd = this.cwd, absolute = false } = options;
+      const results = [];
+
+      const searchDir = (dir, pat) => {
+        try {
+          const entries = this.readDir(dir);
+          for (const entry of entries) {
+            const fullPath = Path.join(dir, entry);
+
+            if (pat.includes('*')) {
+              const regex = new RegExp(pat.replace(/\*/g, '.*'));
+              if (regex.test(entry)) {
+                results.push(absolute ? fullPath : Path.join('.', entry));
+              }
+            } else if (entry === pat) {
+              results.push(absolute ? fullPath : Path.join('.', entry));
+            }
+
+            if (this.isDirectory(fullPath) && pat.includes('/')) {
+              searchDir(fullPath, pat);
+            }
+          }
+        } catch (e) {
+          // Ignore directories we can't read
+        }
+      };
+
+      searchDir(cwd, pattern);
+      return results;
+    }
+
+    static watch(path, options = {}) {
+      // Basic file watching - in a real implementation this would use platform-specific APIs
+      console.warn('FileSystem.watch() is not implemented - polling not supported in this environment');
+
+      // Return a basic EventTarget for API compatibility
+      return new class FileWatcher extends EventTarget {
+        close() {
+          // No-op
+        }
+      };
+    }
+  };
+
+  // Simple FileSystem extensions - no redundant classes
+  Object.assign(FileSystem, {
+    // Path utilities
+    join(...parts) {
+      return parts.join('/').replace(/\/+/g, '/');
+    },
+
+    dirname(path) {
+      return path.substring(0, path.lastIndexOf('/')) || '/';
+    },
+
+    basename(path) {
+      return path.substring(path.lastIndexOf('/') + 1);
+    },
+
+    extname(path) {
+      const name = this.basename(path);
+      const lastDot = name.lastIndexOf('.');
+      return lastDot > 0 ? name.substring(lastDot) : '';
+    },
+
+    // Efficient file operations that go through Swift
+    async streamCopy(source, destination, options = {}) {
+      const { onProgress } = options;
+
+      if (!this.exists(source)) {
+        throw new Error(`Source file not found: ${source}`);
+      }
+
+      // For files under 10MB, use direct copy for better performance
+      const sourceSize = this.stat(source).size;
+      if (sourceSize <= 10 * 1024 * 1024) {
+        const result = this.copy(source, destination, { overwrite: true });
+        if (onProgress) {
+          onProgress({ loaded: sourceSize, total: sourceSize, percent: 100 });
+        }
+        return result;
+      }
+
+      // For larger files, could implement chunked copying in Swift
+      // For now, fall back to standard copy
+      return this.copy(source, destination, { overwrite: true });
+    }
+  });
+
+
+
   // Event API - basic DOM-like event system
   globalThis.Event = class Event {
     constructor(type, options = {}) {
@@ -684,22 +1135,372 @@
       placeholder.#setSize(span);
       return placeholder;
     }
+
+    stream() {
+      // Return a ReadableStream that streams the blob data in chunks
+      const blob = this;
+
+      return new ReadableStream({
+        async start(controller) {
+          try {
+            // For now, we'll read the entire blob and stream it in chunks
+            // This could be optimized to stream parts individually for very large blobs
+            const buffer = await blob.arrayBuffer();
+            const uint8Array = new Uint8Array(buffer);
+
+            // Stream in 64KB chunks for better performance
+            const chunkSize = 64 * 1024;
+            let offset = 0;
+
+            while (offset < uint8Array.length) {
+              const chunk = uint8Array.slice(offset, Math.min(offset + chunkSize, uint8Array.length));
+              controller.enqueue(chunk);
+              offset += chunkSize;
+            }
+
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        }
+      });
+    }
   };
 
   // File - extends Blob with file metadata
   globalThis.File = class File extends Blob {
     #name;
     #lastModified;
+    #filePath; // For files created from FileSystemFileHandle
 
     constructor(parts, name, options = {}) {
       super(parts, options);
       this.#name = String(name || '');
       this.#lastModified = options.lastModified || Date.now();
+      this.#filePath = options._filePath || null; // Internal option for file system files
       this[Symbol.toStringTag] = 'File';
     }
 
     get name() { return this.#name; }
     get lastModified() { return this.#lastModified; }
+
+    stream() {
+      // If this File was created from a file system path, stream directly from disk using Swift
+      const filePath = this.#filePath;
+      if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath)) {
+        return new ReadableStream({
+          start(controller) {
+            // Create a file handle for efficient streaming through Swift
+            const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+            if (!handle) {
+              controller.error(new Error(`Failed to open file: ${filePath}`));
+              return;
+            }
+
+            const chunkSize = 64 * 1024; // 64KB chunks
+
+            const readNextChunk = () => {
+              try {
+                // Read chunk directly from Swift file handle
+                const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
+
+                if (!chunk) {
+                  // EOF reached
+                  __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+                  controller.close();
+                  return;
+                }
+
+                // Convert JSValue to Uint8Array
+                const bytes = chunk.typedArrayBytes;
+                controller.enqueue(new Uint8Array(bytes));
+
+                // Continue reading asynchronously
+                setTimeout(readNextChunk, 0);
+              } catch (error) {
+                __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+                controller.error(error);
+              }
+            };
+
+            readNextChunk();
+          }
+        });
+      }
+
+      // For in-memory File objects, use the parent Blob stream() method
+      return super.stream();
+    }
+
+    // Static method to create File from file system path
+    static fromPath(path) {
+      if (!__APPLE_SPEC__.FileSystem.exists(path) || !__APPLE_SPEC__.FileSystem.isFile(path)) {
+        throw new Error(`File not found: ${path}`);
+      }
+
+      const stats = __APPLE_SPEC__.FileSystem.stat(path);
+
+      // Extract filename and extension using JavaScript
+      const name = path.split('/').pop() || '';
+      const ext = name.includes('.') ? '.' + name.split('.').pop() : '';
+
+      // Helper function for MIME types
+      function getMimeType(ext) {
+        const mimes = {
+          '.txt': 'text/plain',
+          '.html': 'text/html',
+          '.json': 'application/json',
+          '.js': 'application/javascript',
+          '.css': 'text/css',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.pdf': 'application/pdf'
+        };
+        return mimes[ext.toLowerCase()] || 'application/octet-stream';
+      }
+
+      // Create File object that references the path for efficient operations
+      return new File([], name, {
+        type: getMimeType(ext),
+        lastModified: stats.lastModified ? stats.lastModified.getTime() : Date.now(),
+        _filePath: path
+      });
+    }
+  };
+
+  // FileReader - asynchronous file reading with events
+  globalThis.FileReader = class FileReader extends EventTarget {
+    static EMPTY = 0;
+    static LOADING = 1;
+    static DONE = 2;
+
+    #readyState = FileReader.EMPTY;
+    #result = null;
+    #error = null;
+
+    constructor() {
+      super();
+      this.EMPTY = FileReader.EMPTY;
+      this.LOADING = FileReader.LOADING;
+      this.DONE = FileReader.DONE;
+
+      // Event handler properties
+      this.onloadstart = null;
+      this.onprogress = null;
+      this.onload = null;
+      this.onabort = null;
+      this.onerror = null;
+      this.onloadend = null;
+    }
+
+    get readyState() { return this.#readyState; }
+    get result() { return this.#result; }
+    get error() { return this.#error; }
+
+    #setReadyState(state) {
+      this.#readyState = state;
+    }
+
+    #fireEvent(type, data = {}) {
+      const event = new Event(type);
+      Object.assign(event, data);
+
+      this.dispatchEvent(event);
+
+      // Also call the onX handler if it exists
+      const handler = this['on' + type];
+      if (typeof handler === 'function') {
+        handler.call(this, event);
+      }
+    }
+
+    abort() {
+      if (this.#readyState === FileReader.LOADING) {
+        this.#setReadyState(FileReader.DONE);
+        this.#result = null;
+        this.#fireEvent('abort');
+        this.#fireEvent('loadend');
+      }
+    }
+
+    readAsArrayBuffer(blob) {
+      this.#startReading(blob, 'arraybuffer');
+    }
+
+    readAsBinaryString(blob) {
+      this.#startReading(blob, 'binarystring');
+    }
+
+    readAsDataURL(blob) {
+      this.#startReading(blob, 'dataurl');
+    }
+
+    readAsText(blob, encoding = 'utf-8') {
+      this.#startReading(blob, 'text', encoding);
+    }
+
+    // Enhanced method to read FSFile objects directly
+    readAsArrayBufferFromPath(filePath) {
+      const fsFile = new FSFile(filePath);
+      this.#startReading(fsFile.toBlob(), 'arraybuffer');
+    }
+
+    readAsTextFromPath(filePath, encoding = 'utf-8') {
+      const fsFile = new FSFile(filePath);
+      this.#startReading(fsFile.toBlob(), 'text', encoding);
+    }
+
+    readAsDataURLFromPath(filePath) {
+      const fsFile = new FSFile(filePath);
+      this.#startReading(fsFile.toBlob(), 'dataurl');
+    }
+
+    async #startReading(blobOrFile, format, encoding = 'utf-8') {
+      if (this.#readyState === FileReader.LOADING) {
+        throw new Error('InvalidStateError: FileReader is already reading');
+      }
+
+      this.#setReadyState(FileReader.LOADING);
+      this.#result = null;
+      this.#error = null;
+
+      // Fire loadstart event
+      this.#fireEvent('loadstart');
+
+      try {
+        let blob;
+        let useStreaming = false;
+
+        // Handle different input types
+        if (blobOrFile instanceof FSFile) {
+          if (!blobOrFile.exists) {
+            throw new Error(`File not found: ${blobOrFile.path}`);
+          }
+          blob = blobOrFile.toBlob();
+          useStreaming = blobOrFile.size > 1024 * 1024; // Use streaming for files > 1MB
+        } else {
+          blob = blobOrFile;
+          useStreaming = blob.size > 1024 * 1024;
+        }
+
+        const total = blob.size || 0;
+        let loaded = 0;
+
+        // Fire initial progress event
+        this.#fireEvent('progress', { loaded: 0, total, lengthComputable: total > 0 });
+
+        let result;
+
+        if (useStreaming && (format === 'arraybuffer' || format === 'text')) {
+          // Use streaming for large files
+          result = await this.#streamingRead(blob, format, encoding, (progressLoaded) => {
+            loaded = progressLoaded;
+            this.#fireEvent('progress', { loaded, total, lengthComputable: true });
+          });
+        } else {
+          // Standard reading for smaller files
+          switch (format) {
+            case 'arraybuffer':
+              result = await blob.arrayBuffer();
+              break;
+
+            case 'text':
+              result = await blob.text();
+              break;
+
+            case 'dataurl':
+              const buffer = await blob.arrayBuffer();
+              const bytes = new Uint8Array(buffer);
+              const base64 = btoa(String.fromCharCode(...bytes));
+              result = `data:${blob.type || 'application/octet-stream'};base64,${base64}`;
+              break;
+
+            case 'binarystring':
+              const binaryBuffer = await blob.arrayBuffer();
+              const binaryBytes = new Uint8Array(binaryBuffer);
+              result = String.fromCharCode(...binaryBytes);
+              break;
+
+            default:
+              throw new Error(`Unknown format: ${format}`);
+          }
+        }
+
+        // Check if reading was aborted
+        if (this.#readyState !== FileReader.LOADING) {
+          return; // Aborted
+        }
+
+        this.#result = result;
+        this.#setReadyState(FileReader.DONE);
+
+        // Fire final progress event
+        this.#fireEvent('progress', { loaded: total, total, lengthComputable: true });
+
+        // Fire load event
+        this.#fireEvent('load');
+
+        // Fire loadend event
+        this.#fireEvent('loadend');
+
+      } catch (error) {
+        this.#error = error;
+        this.#setReadyState(FileReader.DONE);
+
+        // Fire error event
+        this.#fireEvent('error');
+
+        // Fire loadend event
+        this.#fireEvent('loadend');
+      }
+    }
+
+    async #streamingRead(blob, format, encoding, onProgress) {
+      const stream = blob.stream();
+      const reader = stream.getReader();
+      const chunks = [];
+      let totalLoaded = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          totalLoaded += value.byteLength;
+
+          if (onProgress) {
+            onProgress(totalLoaded);
+          }
+
+          // Check if aborted during streaming
+          if (this.#readyState !== FileReader.LOADING) {
+            return null;
+          }
+        }
+
+        // Combine chunks
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+
+        if (format === 'arraybuffer') {
+          return combined.buffer;
+        } else if (format === 'text') {
+          return new TextDecoder(encoding).decode(combined);
+        }
+
+        throw new Error(`Streaming not supported for format: ${format}`);
+      } finally {
+        reader.releaseLock();
+      }
+    }
   };
 
   // XMLHttpRequest - HTTP request implementation
