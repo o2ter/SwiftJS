@@ -805,10 +805,14 @@
     for (let i = 0; i < base64.length; i += 4) {
       const encoded1 = chars.indexOf(base64.charAt(i));
       const encoded2 = chars.indexOf(base64.charAt(i + 1));
-      const encoded3 = chars.indexOf(base64.charAt(i + 2));
-      const encoded4 = chars.indexOf(base64.charAt(i + 3));
+      const encoded3 = i + 2 < base64.length ? chars.indexOf(base64.charAt(i + 2)) : -1;
+      const encoded4 = i + 3 < base64.length ? chars.indexOf(base64.charAt(i + 3)) : -1;
 
-      const bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
+      // Handle the case where we don't have enough characters
+      const e3 = encoded3 === -1 ? 0 : encoded3;
+      const e4 = encoded4 === -1 ? 0 : encoded4;
+
+      const bitmap = (encoded1 << 18) | (encoded2 << 12) | (e3 << 6) | e4;
 
       result += String.fromCharCode((bitmap >> 16) & 255);
       if (encoded3 !== -1) result += String.fromCharCode((bitmap >> 8) & 255);
