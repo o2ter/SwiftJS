@@ -184,7 +184,7 @@ When discovering important JavaScriptCore facts or behaviors during development:
 - Note any workarounds or special handling required
 - Mark critical behaviors with **CRITICAL:** or **Important:** tags
 
-### Test Execution Guidelines
+## Test Execution Guidelines
 When running tests as an AI agent:
 - Wait for the test task to complete before proceeding
 - If you cannot see the output or the task appears to be still running, the agent is required to ask the user to confirm the task has completed or stuck
