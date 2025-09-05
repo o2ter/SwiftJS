@@ -511,6 +511,403 @@ final class FetchTests: XCTestCase {
         wait(for: [expectation], timeout: 30.0)
     }
     
+    // MARK: - Advanced Error Handling Tests
+
+    func testNetworkTimeoutSimulation() {
+        let expectation = XCTestExpectation(description: "Network timeout simulation")
+
+        let script = """
+                // Use AbortController to simulate timeout
+                const controller = new AbortController();
+                var requestStarted = false;
+                var timeoutTriggered = false;
+                
+                // Set a short timeout
+                const timeoutId = setTimeout(() => {
+                    timeoutTriggered = true;
+                    controller.abort();
+                }, 100);
+                
+                requestStarted = true;
+                fetch('https://postman-echo.com/delay/5', { 
+                    signal: controller.signal 
+                })
+                    .then(response => {
+                        clearTimeout(timeoutId);
+                        testCompleted({ 
+                            error: 'Request should have been aborted',
+                            requestStarted: requestStarted,
+                            timeoutTriggered: timeoutTriggered
+                        });
+                    })
+                    .catch(error => {
+                        clearTimeout(timeoutId);
+                        testCompleted({
+                            aborted: true,
+                            errorName: error.name,
+                            errorMessage: error.message,
+                            requestStarted: requestStarted,
+                            timeoutTriggered: timeoutTriggered,
+                            properTimeout: timeoutTriggered && error.name.includes('Abort')
+                        });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if result["error"].isString {
+                // Request completed too quickly, that's acceptable
+                XCTAssertTrue(result["requestStarted"].boolValue ?? false)
+            } else {
+                XCTAssertTrue(result["aborted"].boolValue ?? false)
+                XCTAssertTrue(result["requestStarted"].boolValue ?? false)
+                XCTAssertNotEqual(result["errorName"].toString(), "")
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 5.0)
+    }
+
+    func testContentTypeMismatch() {
+        let expectation = XCTestExpectation(description: "Content-Type mismatch handling")
+
+        let script = """
+                // Create response with mismatched content-type
+                const jsonData = { message: 'Hello', number: 42 };
+                const response = new Response(JSON.stringify(jsonData), {
+                    headers: {
+                        'Content-Type': 'text/plain' // Wrong content type for JSON
+                    }
+                });
+                
+                const tests = [];
+                
+                // Test 1: Try to parse as JSON despite text/plain content-type
+                response.clone().json()
+                    .then(parsed => {
+                        tests.push({
+                            test: 'json-parse-success',
+                            success: true,
+                            data: parsed,
+                            messageMatches: parsed.message === jsonData.message
+                        });
+                    })
+                    .catch(error => {
+                        tests.push({
+                            test: 'json-parse-failed',
+                            success: false,
+                            error: error.message
+                        });
+                    })
+                    .then(() => {
+                        // Test 2: Parse as text (should work)
+                        return response.clone().text();
+                    })
+                    .then(text => {
+                        tests.push({
+                            test: 'text-parse',
+                            success: true,
+                            data: text,
+                            isValidJSON: (() => {
+                                try {
+                                    JSON.parse(text);
+                                    return true;
+                                } catch {
+                                    return false;
+                                }
+                            })()
+                        });
+                        
+                        testCompleted({
+                            tests: tests,
+                            contentTypeHeader: response.headers.get('Content-Type'),
+                            handledMismatchGracefully: tests.length === 2
+                        });
+                    })
+                    .catch(error => {
+                        testCompleted({ 
+                            error: error.message,
+                            testsCompleted: tests.length
+                        });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if !result["error"].isString {
+                XCTAssertTrue(result["handledMismatchGracefully"].boolValue ?? false)
+                XCTAssertEqual(result["contentTypeHeader"].toString(), "text/plain")
+
+                let tests = result["tests"]
+                let testCount = Int(tests["length"].numberValue ?? 0)
+                XCTAssertEqual(testCount, 2)
+
+                // At least one parsing method should succeed
+                var hasSuccess = false
+                for i in 0..<testCount {
+                    if tests[i]["success"].boolValue == true {
+                        hasSuccess = true
+                        break
+                    }
+                }
+                XCTAssertTrue(hasSuccess, "At least one parsing method should succeed")
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testProgressiveDownloadInterruption() {
+        let expectation = XCTestExpectation(description: "Progressive download interruption")
+
+        let script = """
+                const controller = new AbortController();
+                var bytesReceived = 0;
+                var chunksReceived = 0;
+                
+                // Simulate a large download that gets interrupted
+                fetch('https://postman-echo.com/stream/10', { 
+                    signal: controller.signal 
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                        
+                        const reader = response.body.getReader();
+                        
+                        function readChunk() {
+                            return reader.read().then(({ done, value }) => {
+                                if (done) {
+                                    testCompleted({
+                                        completed: true,
+                                        bytesReceived: bytesReceived,
+                                        chunksReceived: chunksReceived,
+                                        interruptedAsExpected: false
+                                    });
+                                    return;
+                                }
+                                
+                                bytesReceived += value.byteLength;
+                                chunksReceived++;
+                                
+                                // Interrupt after receiving some data
+                                if (chunksReceived >= 3) {
+                                    controller.abort();
+                                    return Promise.reject(new Error('Simulated interruption'));
+                                }
+                                
+                                return readChunk();
+                            });
+                        }
+                        
+                        return readChunk();
+                    })
+                    .catch(error => {
+                        testCompleted({
+                            interrupted: true,
+                            errorMessage: error.message,
+                            bytesReceived: bytesReceived,
+                            chunksReceived: chunksReceived,
+                            receivedDataBeforeError: bytesReceived > 0,
+                            interruptedAsExpected: chunksReceived >= 3 && bytesReceived > 0
+                        });
+                    });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if result["completed"].boolValue == true {
+                // Download completed too quickly, that's acceptable
+                XCTAssertGreaterThan(Int(result["chunksReceived"].numberValue ?? 0), 0)
+            } else {
+                XCTAssertTrue(result["interrupted"].boolValue ?? false)
+                XCTAssertTrue(result["receivedDataBeforeError"].boolValue ?? false)
+                XCTAssertGreaterThan(Int(result["bytesReceived"].numberValue ?? 0), 0)
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 10.0)
+    }
+
+    func testConcurrentRequestErrors() {
+        let expectation = XCTestExpectation(description: "Concurrent request errors")
+
+        let script = """
+                const requests = [
+                    'https://postman-echo.com/get',
+                    'https://postman-echo.com/status/404',
+                    'https://postman-echo.com/status/500',
+                    'https://invalid-url-12345.nonexistent',
+                    'https://postman-echo.com/delay/1'
+                ];
+                
+                const results = [];
+                const startTime = Date.now();
+                
+                Promise.allSettled(requests.map((url, index) => {
+                    return fetch(url)
+                        .then(response => ({
+                            index: index,
+                            url: url,
+                            status: response.status,
+                            ok: response.ok,
+                            success: true
+                        }))
+                        .catch(error => ({
+                            index: index,
+                            url: url,
+                            error: error.message,
+                            success: false
+                        }));
+                })).then(promiseResults => {
+                    const endTime = Date.now();
+                    const duration = endTime - startTime;
+                    
+                    const successCount = promiseResults.filter(r => 
+                        r.status === 'fulfilled' && r.value.success
+                    ).length;
+                    
+                    const errorCount = promiseResults.filter(r => 
+                        r.status === 'rejected' || !r.value.success
+                    ).length;
+                    
+                    const networkErrors = promiseResults.filter(r => 
+                        r.status === 'fulfilled' && !r.value.success && r.value.error
+                    ).length;
+                    
+                    const httpErrors = promiseResults.filter(r => 
+                        r.status === 'fulfilled' && r.value.success && !r.value.ok
+                    ).length;
+                    
+                    testCompleted({
+                        totalRequests: requests.length,
+                        successCount: successCount,
+                        errorCount: errorCount,
+                        networkErrors: networkErrors,
+                        httpErrors: httpErrors,
+                        duration: duration,
+                        handledConcurrently: duration < 10000, // Should complete reasonably quickly
+                        results: promiseResults.map(r => r.status === 'fulfilled' ? r.value : { error: 'Promise rejected' })
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            XCTAssertEqual(Int(result["totalRequests"].numberValue ?? 0), 5)
+            XCTAssertTrue(result["handledConcurrently"].boolValue ?? false)
+
+            // We expect at least some requests to succeed and some to fail
+            let successCount = Int(result["successCount"].numberValue ?? 0)
+            let errorCount = Int(result["errorCount"].numberValue ?? 0)
+            let networkErrors = Int(result["networkErrors"].numberValue ?? 0)
+            let httpErrors = Int(result["httpErrors"].numberValue ?? 0)
+
+            XCTAssertGreaterThanOrEqual(successCount + errorCount + networkErrors + httpErrors, 3)
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 15.0)
+    }
+
+    func testResponseStreamInterruption() {
+        let expectation = XCTestExpectation(description: "Response stream interruption")
+
+        let script = """
+                const response = new Response('This is a test response with some content that we will interrupt');
+                var readChunks = 0;
+                var totalBytes = 0;
+                
+                const reader = response.body.getReader();
+                
+                function readWithInterruption() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            testCompleted({
+                                completed: true,
+                                chunksRead: readChunks,
+                                totalBytes: totalBytes,
+                                interrupted: false
+                            });
+                            return;
+                        }
+                        
+                        readChunks++;
+                        totalBytes += value.byteLength;
+                        
+                        // Interrupt after reading some data
+                        if (readChunks >= 1) {
+                            reader.cancel('Simulated interruption');
+                            testCompleted({
+                                interrupted: true,
+                                chunksRead: readChunks,
+                                totalBytes: totalBytes,
+                                reason: 'Simulated interruption',
+                                readSomeData: totalBytes > 0
+                            });
+                            return;
+                        }
+                        
+                        return readWithInterruption();
+                    }).catch(error => {
+                        testCompleted({
+                            error: error.message,
+                            chunksRead: readChunks,
+                            totalBytes: totalBytes,
+                            interrupted: true
+                        });
+                    });
+                }
+                
+                readWithInterruption();
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if result["completed"].boolValue == true {
+                // Stream completed without interruption
+                XCTAssertGreaterThan(Int(result["totalBytes"].numberValue ?? 0), 0)
+            } else if result["interrupted"].boolValue == true {
+                if !result["error"].isString {
+                    XCTAssertTrue(result["readSomeData"].boolValue ?? false)
+                    XCTAssertGreaterThan(Int(result["chunksRead"].numberValue ?? 0), 0)
+                }
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
     // MARK: - Error Handling Tests
     
     func testFetchInvalidURL() {

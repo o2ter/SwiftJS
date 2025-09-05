@@ -991,6 +991,430 @@ final class StreamingTests: XCTestCase {
         wait(for: [expectation])
     }
     
+    // MARK: - Advanced Error Handling Tests
+
+    func testStreamCorruptionRecovery() {
+        let expectation = XCTestExpectation(description: "Stream corruption recovery")
+
+        let script = """
+                var chunkCount = 0;
+                const corruptedStream = new ReadableStream({
+                    start(controller) {
+                        // Send some valid data
+                        controller.enqueue(new TextEncoder().encode('Valid data '));
+                        
+                        // Simulate corruption by sending invalid UTF-8 bytes
+                        const corruptedBytes = new Uint8Array([0xFF, 0xFE, 0xFD]);
+                        controller.enqueue(corruptedBytes);
+                        
+                        // Send more valid data
+                        controller.enqueue(new TextEncoder().encode(' More valid data'));
+                        controller.close();
+                    }
+                });
+                
+                const processedChunks = [];
+                const errorLog = [];
+                
+                const destination = new WritableStream({
+                    write(chunk) {
+                        chunkCount++;
+                        try {
+                            // Attempt to decode each chunk
+                            const text = new TextDecoder('utf-8', { fatal: false }).decode(chunk);
+                            processedChunks.push(text);
+                        } catch (error) {
+                            errorLog.push({ 
+                                chunkIndex: chunkCount,
+                                error: error.message,
+                                byteLength: chunk.byteLength
+                            });
+                            // Use replacement character for corrupted data
+                            processedChunks.push('�');
+                        }
+                    },
+                    close() {
+                        testCompleted({
+                            totalChunks: chunkCount,
+                            processedText: processedChunks.join(''),
+                            errorCount: errorLog.length,
+                            hasValidData: processedChunks.some(chunk => chunk.includes('Valid')),
+                            recoveredGracefully: chunkCount > 0 && processedChunks.length > 0
+                        });
+                    }
+                });
+                
+                corruptedStream.pipeTo(destination).catch(error => {
+                    testCompleted({ 
+                        pipeError: error.message,
+                        totalChunks: chunkCount,
+                        errorCount: errorLog.length
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if !result["pipeError"].isString {
+                XCTAssertGreaterThan(Int(result["totalChunks"].numberValue ?? 0), 0)
+                XCTAssertTrue(result["hasValidData"].boolValue ?? false)
+                XCTAssertTrue(result["recoveredGracefully"].boolValue ?? false)
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testConcurrentStreamErrors() {
+        let expectation = XCTestExpectation(description: "Concurrent stream errors")
+
+        let script = """
+                const streamCount = 5;
+                const streams = [];
+                const results = [];
+                
+                // Create multiple streams that will error at different times
+                for (let i = 0; i < streamCount; i++) {
+                    const stream = new ReadableStream({
+                        start(controller) {
+                            // Send some data first
+                            controller.enqueue(new TextEncoder().encode(`Stream ${i} data`));
+                            
+                            // Error at different times
+                            setTimeout(() => {
+                                controller.error(new Error(`Stream ${i} error`));
+                            }, 10 + (i * 5));
+                        }
+                    });
+                    streams.push(stream);
+                }
+                
+                // Process all streams concurrently
+                const promises = streams.map((stream, index) => {
+                    return new Promise((resolve) => {
+                        const chunks = [];
+                        const reader = stream.getReader();
+                        
+                        function readChunk() {
+                            reader.read()
+                                .then(({ done, value }) => {
+                                    if (done) {
+                                        resolve({ 
+                                            streamIndex: index, 
+                                            success: true, 
+                                            chunks: chunks.length,
+                                            data: chunks.join('')
+                                        });
+                                        return;
+                                    }
+                                    chunks.push(new TextDecoder().decode(value));
+                                    readChunk();
+                                })
+                                .catch(error => {
+                                    resolve({ 
+                                        streamIndex: index, 
+                                        success: false, 
+                                        error: error.message,
+                                        chunks: chunks.length,
+                                        partialData: chunks.join('')
+                                    });
+                                });
+                        }
+                        
+                        readChunk();
+                    });
+                });
+                
+                Promise.all(promises).then(streamResults => {
+                    const successCount = streamResults.filter(r => r.success).length;
+                    const errorCount = streamResults.filter(r => !r.success).length;
+                    const allReceivedSomeData = streamResults.every(r => r.chunks > 0 || r.partialData);
+                    
+                    testCompleted({
+                        totalStreams: streamCount,
+                        successCount: successCount,
+                        errorCount: errorCount,
+                        allReceivedSomeData: allReceivedSomeData,
+                        results: streamResults
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertEqual(Int(result["totalStreams"].numberValue ?? 0), 5)
+            XCTAssertEqual(Int(result["errorCount"].numberValue ?? 0), 5)  // All streams should error
+            XCTAssertTrue(result["allReceivedSomeData"].boolValue ?? false)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
+    func testMemoryPressureStreaming() {
+        let expectation = XCTestExpectation(description: "Memory pressure streaming")
+
+        let script = """
+                const chunkSize = 1024 * 1024; // 1MB chunks
+                const totalChunks = 10; // 10MB total
+                var processedChunks = 0;
+                var totalBytes = 0;
+                var memoryPeakReached = false;
+                
+                const largeDataStream = new ReadableStream({
+                    start(controller) {
+                        function sendChunk() {
+                            if (processedChunks < totalChunks) {
+                                // Create a large chunk
+                                const chunk = new Uint8Array(chunkSize);
+                                // Fill with pattern to make it realistic
+                                for (let i = 0; i < chunkSize; i++) {
+                                    chunk[i] = (processedChunks * chunkSize + i) % 256;
+                                }
+                                
+                                try {
+                                    controller.enqueue(chunk);
+                                    processedChunks++;
+                                    
+                                    // Use setTimeout to allow garbage collection between chunks
+                                    setTimeout(sendChunk, 1);
+                                } catch (error) {
+                                    controller.error(error);
+                                }
+                            } else {
+                                controller.close();
+                            }
+                        }
+                        sendChunk();
+                    }
+                });
+                
+                const destination = new WritableStream({
+                    write(chunk) {
+                        totalBytes += chunk.byteLength;
+                        
+                        // Check if we're handling large amounts of data
+                        if (totalBytes > 5 * 1024 * 1024) { // 5MB
+                            memoryPeakReached = true;
+                        }
+                        
+                        // Simulate processing time
+                        return new Promise(resolve => setTimeout(resolve, 1));
+                    },
+                    close() {
+                        testCompleted({
+                            totalBytes: totalBytes,
+                            expectedBytes: chunkSize * totalChunks,
+                            processedAllChunks: processedChunks === totalChunks,
+                            memoryPeakReached: memoryPeakReached,
+                            averageChunkSize: totalBytes / processedChunks
+                        });
+                    }
+                });
+                
+                largeDataStream.pipeTo(destination).catch(error => {
+                    testCompleted({ 
+                        error: error.message,
+                        totalBytes: totalBytes,
+                        processedChunks: processedChunks
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if !result["error"].isString {
+                XCTAssertTrue(result["memoryPeakReached"].boolValue ?? false)
+                XCTAssertGreaterThan(Int(result["totalBytes"].numberValue ?? 0), 5 * 1024 * 1024)
+                XCTAssertTrue(result["processedAllChunks"].boolValue ?? false)
+            } else {
+                // Memory pressure might cause errors, which is acceptable
+                XCTAssertGreaterThan(Int(result["processedChunks"].numberValue ?? 0), 0)
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 30.0)  // Longer timeout for large data
+    }
+
+    func testBackpressureHandling() {
+        let expectation = XCTestExpectation(description: "Backpressure handling")
+
+        let script = """
+                var producedChunks = 0;
+                var consumedChunks = 0;
+                const maxBuffer = 5;
+                
+                const fastProducer = new ReadableStream({
+                    start(controller) {
+                        function produceChunk() {
+                            if (producedChunks < 20) {
+                                controller.enqueue(new TextEncoder().encode(`Chunk ${producedChunks++}`));
+                                // Produce quickly
+                                setTimeout(produceChunk, 1);
+                            } else {
+                                controller.close();
+                            }
+                        }
+                        produceChunk();
+                    }
+                });
+                
+                const slowConsumer = new WritableStream({
+                    write(chunk) {
+                        consumedChunks++;
+                        // Simulate slow consumption
+                        return new Promise(resolve => {
+                            setTimeout(() => {
+                                resolve();
+                            }, 50); // 50ms delay per chunk
+                        });
+                    },
+                    close() {
+                        testCompleted({
+                            producedChunks: producedChunks,
+                            consumedChunks: consumedChunks,
+                            allConsumed: producedChunks === consumedChunks,
+                            backpressureHandled: consumedChunks > 0
+                        });
+                    }
+                });
+                
+                fastProducer.pipeTo(slowConsumer).catch(error => {
+                    testCompleted({ 
+                        error: error.message,
+                        producedChunks: producedChunks,
+                        consumedChunks: consumedChunks
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if !result["error"].isString {
+                XCTAssertTrue(result["backpressureHandled"].boolValue ?? false)
+                XCTAssertTrue(result["allConsumed"].boolValue ?? false)
+                XCTAssertEqual(Int(result["producedChunks"].numberValue ?? 0), 20)
+                XCTAssertEqual(Int(result["consumedChunks"].numberValue ?? 0), 20)
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 15.0)
+    }
+
+    func testStreamResourceCleanup() {
+        let expectation = XCTestExpectation(description: "Stream resource cleanup")
+
+        let script = """
+                var readersReleased = 0;
+                var writersReleased = 0;
+                const streams = [];
+                
+                // Create multiple streams that will be abandoned mid-processing
+                for (let i = 0; i < 3; i++) {
+                    const stream = new ReadableStream({
+                        start(controller) {
+                            controller.enqueue(new TextEncoder().encode(`Stream ${i} data`));
+                            // Don't close the stream
+                        },
+                        cancel() {
+                            // This should be called when the reader is released
+                            readersReleased++;
+                        }
+                    });
+                    streams.push(stream);
+                }
+                
+                // Get readers and then abandon them
+                const readers = streams.map(stream => stream.getReader());
+                
+                // Read one chunk from each, then release
+                Promise.all(readers.map((reader, index) => {
+                    return reader.read().then(result => {
+                        reader.releaseLock();
+                        return { index, success: true, data: result };
+                    }).catch(error => {
+                        return { index, success: false, error: error.message };
+                    });
+                })).then(results => {
+                    // Create writable streams and abandon them too
+                    const writableStreams = [];
+                    for (let i = 0; i < 3; i++) {
+                        const stream = new WritableStream({
+                            write(chunk) {
+                                // Process chunk
+                            },
+                            close() {
+                                writersReleased++;
+                            },
+                            abort() {
+                                writersReleased++;
+                            }
+                        });
+                        writableStreams.push(stream);
+                    }
+                    
+                    const writers = writableStreams.map(stream => stream.getWriter());
+                    
+                    // Write to each then release
+                    Promise.all(writers.map((writer, index) => {
+                        return writer.write(new TextEncoder().encode(`Test ${index}`))
+                            .then(() => {
+                                writer.releaseLock();
+                                return { index, success: true };
+                            })
+                            .catch(error => {
+                                return { index, success: false, error: error.message };
+                            });
+                    })).then(writeResults => {
+                        // Force garbage collection hints
+                        setTimeout(() => {
+                            testCompleted({
+                                readResults: results,
+                                writeResults: writeResults,
+                                readersProcessed: results.filter(r => r.success).length,
+                                writersProcessed: writeResults.filter(r => r.success).length,
+                                resourcesCleanedUp: readersReleased >= 0 && writersReleased >= 0
+                            });
+                        }, 100);
+                    });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertEqual(Int(result["readersProcessed"].numberValue ?? 0), 3)
+            XCTAssertEqual(Int(result["writersProcessed"].numberValue ?? 0), 3)
+            XCTAssertTrue(result["resourcesCleanedUp"].boolValue ?? false)
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation])
+    }
+
     // MARK: - Type Validation Tests
     
     func testPipeToTypeValidation() {

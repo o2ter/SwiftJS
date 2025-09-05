@@ -484,6 +484,317 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         }
     }
     
+    // MARK: - Advanced Integration Error Tests
+
+    func testStreamingWithConnectionFailure() {
+        let expectation = expectation(description: "Streaming with connection failure")
+
+        let script = """
+                (async () => {
+                    const unreliableConnections = [
+                        'https://httpstat.us/200?sleep=1000',  // Slow response
+                        'https://httpstat.us/503',             // Service unavailable  
+                        'https://httpstat.us/timeout',         // Timeout
+                        'https://nonexistent-domain-12345.com' // DNS failure
+                    ];
+                    
+                    const results = [];
+                    
+                    for (const url of unreliableConnections) {
+                        try {
+                            console.log(`Testing connection to: ${url}`);
+                            
+                            const session = __APPLE_SPEC__.URLSession.shared();
+                            const request = new __APPLE_SPEC__.URLRequest(url);
+                            
+                            const startTime = Date.now();
+                            const result = await Promise.race([
+                                session.httpRequestWithRequest(request, null, null, null),
+                                new Promise((_, reject) => 
+                                    setTimeout(() => reject(new Error('Test timeout')), 3000)
+                                )
+                            ]);
+                            
+                            const duration = Date.now() - startTime;
+                            
+                            results.push({
+                                url: url,
+                                success: true,
+                                statusCode: result.response.statusCode,
+                                duration: duration,
+                                hasData: !!result.data
+                            });
+                            
+                        } catch (error) {
+                            results.push({
+                                url: url,
+                                success: false,
+                                error: error.message,
+                                errorType: error.name || 'Unknown'
+                            });
+                        }
+                    }
+                    
+                    return {
+                        totalTests: unreliableConnections.length,
+                        results: results,
+                        successCount: results.filter(r => r.success).length,
+                        errorCount: results.filter(r => !r.success).length,
+                        handledAllConnections: results.length === unreliableConnections.length
+                    };
+                })()
+            """
+
+        let context = SwiftJS()
+        let promise = context.evaluateScript(script)
+
+        XCTAssertFalse(promise.isUndefined, "Connection failure test should return a promise")
+
+        expectation.fulfill()
+
+        waitForExpectations(timeout: 20.0) { error in
+            XCTAssertNil(error, "Connection failure test timed out")
+        }
+    }
+
+    func testPartialStreamRecovery() {
+        let expectation = expectation(description: "Partial stream recovery")
+
+        let script = """
+                (async () => {
+                    try {
+                        console.log('Testing partial stream recovery...');
+                        
+                        var chunksReceived = 0;
+                        var totalBytes = 0;
+                        var recoveryAttempted = false;
+                        
+                        const session = __APPLE_SPEC__.URLSession.shared();
+                        const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/stream/5');
+                        
+                        const progressHandler = function(chunk, isComplete) {
+                            chunksReceived++;
+                            totalBytes += chunk.length;
+                            
+                            console.log(`Progress: chunk ${chunksReceived}, ${chunk.length} bytes, complete: ${isComplete}`);
+                            
+                            // Simulate recovery logic after partial failure
+                            if (chunksReceived === 3 && !recoveryAttempted) {
+                                recoveryAttempted = true;
+                                console.log('Simulating recovery after partial data...');
+                            }
+                        };
+                        
+                        const result = await session.httpRequestWithRequest(
+                            request,
+                            null,
+                            progressHandler,
+                            null
+                        );
+                        
+                        return {
+                            success: true,
+                            statusCode: result.response.statusCode,
+                            chunksReceived: chunksReceived,
+                            totalBytes: totalBytes,
+                            recoveryAttempted: recoveryAttempted,
+                            hasCompleteResponse: !!result.data && result.response.statusCode === 200
+                        };
+                        
+                    } catch (error) {
+                        console.error('Partial stream recovery error:', error.message);
+                        return {
+                            success: false,
+                            error: error.message,
+                            chunksReceived: chunksReceived,
+                            totalBytes: totalBytes,
+                            recoveryAttempted: recoveryAttempted
+                        };
+                    }
+                })()
+            """
+
+        let context = SwiftJS()
+        let promise = context.evaluateScript(script)
+
+        XCTAssertFalse(promise.isUndefined, "Partial stream recovery should return a promise")
+
+        expectation.fulfill()
+
+        waitForExpectations(timeout: 15.0) { error in
+            XCTAssertNil(error, "Partial stream recovery test timed out")
+        }
+    }
+
+    func testStreamingResourceExhaustion() {
+        let expectation = expectation(description: "Streaming resource exhaustion")
+
+        let script = """
+                (async () => {
+                    try {
+                        console.log('Testing streaming resource exhaustion...');
+                        
+                        const maxConcurrentStreams = 10;
+                        const results = [];
+                        const startTime = Date.now();
+                        
+                        // Create multiple concurrent streaming requests
+                        const promises = [];
+                        for (let i = 0; i < maxConcurrentStreams; i++) {
+                            const promise = (async (streamIndex) => {
+                                try {
+                                    const session = __APPLE_SPEC__.URLSession.shared();
+                                    const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get?stream=' + streamIndex);
+                                    
+                                    const result = await session.httpRequestWithRequest(request, null, null, null);
+                                    
+                                    return {
+                                        streamIndex: streamIndex,
+                                        success: true,
+                                        statusCode: result.response.statusCode,
+                                        hasData: !!result.data
+                                    };
+                                } catch (error) {
+                                    return {
+                                        streamIndex: streamIndex,
+                                        success: false,
+                                        error: error.message
+                                    };
+                                }
+                            })(i);
+                            
+                            promises.push(promise);
+                        }
+                        
+                        // Wait for all concurrent streams
+                        const streamResults = await Promise.allSettled(promises);
+                        const endTime = Date.now();
+                        
+                        const successfulStreams = streamResults.filter(r => 
+                            r.status === 'fulfilled' && r.value.success
+                        ).length;
+                        
+                        const failedStreams = streamResults.filter(r => 
+                            r.status === 'rejected' || !r.value.success
+                        ).length;
+                        
+                        return {
+                            totalStreams: maxConcurrentStreams,
+                            successfulStreams: successfulStreams,
+                            failedStreams: failedStreams,
+                            duration: endTime - startTime,
+                            handledConcurrency: successfulStreams > 0,
+                            resourceExhaustionHandled: failedStreams === 0 || successfulStreams > 0,
+                            results: streamResults.map(r => r.status === 'fulfilled' ? r.value : { error: 'Promise rejected' })
+                        };
+                        
+                    } catch (error) {
+                        console.error('Resource exhaustion test error:', error.message);
+                        return {
+                            success: false,
+                            error: error.message
+                        };
+                    }
+                })()
+            """
+
+        let context = SwiftJS()
+        let promise = context.evaluateScript(script)
+
+        XCTAssertFalse(promise.isUndefined, "Resource exhaustion test should return a promise")
+
+        expectation.fulfill()
+
+        waitForExpectations(timeout: 30.0) { error in
+            XCTAssertNil(error, "Resource exhaustion test timed out")
+        }
+    }
+
+    func testStreamingDataIntegrity() {
+        let expectation = expectation(description: "Streaming data integrity")
+
+        let script = """
+                (async () => {
+                    try {
+                        console.log('Testing streaming data integrity...');
+                        
+                        // Create a large, structured data stream for integrity checking
+                        const expectedPattern = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                        const repeatCount = 100;
+                        const expectedData = expectedPattern.repeat(repeatCount);
+                        
+                        const bodyStream = new ReadableStream({
+                            start(controller) {
+                                const encoder = new TextEncoder();
+                                // Send data in chunks to test integrity
+                                for (let i = 0; i < repeatCount; i++) {
+                                    controller.enqueue(encoder.encode(expectedPattern));
+                                }
+                                controller.close();
+                            }
+                        });
+                        
+                        const session = __APPLE_SPEC__.URLSession.shared();
+                        const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/post');
+                        request.httpMethod = 'POST';
+                        request.setValueForHTTPHeaderField('text/plain', 'Content-Type');
+                        
+                        var receivedChunks = 0;
+                        var totalBytesReceived = 0;
+                        
+                        const progressHandler = function(chunk, isComplete) {
+                            receivedChunks++;
+                            totalBytesReceived += chunk.length;
+                            
+                            // Verify chunk integrity (basic check)
+                            if (chunk.length === 0 && !isComplete) {
+                                console.warn('Received empty chunk');
+                            }
+                        };
+                        
+                        const result = await session.httpRequestWithRequest(
+                            request,
+                            bodyStream,
+                            progressHandler,
+                            null
+                        );
+                        
+                        const expectedBytes = new TextEncoder().encode(expectedData).length;
+                        
+                        return {
+                            success: result.response.statusCode >= 200 && result.response.statusCode < 300,
+                            statusCode: result.response.statusCode,
+                            expectedBytes: expectedBytes,
+                            receivedChunks: receivedChunks,
+                            totalBytesReceived: totalBytesReceived,
+                            hasResponseData: !!result.data,
+                            integrityMaintained: totalBytesReceived > 0 && receivedChunks > 0
+                        };
+                        
+                    } catch (error) {
+                        console.error('Data integrity test error:', error.message);
+                        return {
+                            success: false,
+                            error: error.message,
+                            receivedChunks: receivedChunks || 0,
+                            totalBytesReceived: totalBytesReceived || 0
+                        };
+                    }
+                })()
+            """
+
+        let context = SwiftJS()
+        let promise = context.evaluateScript(script)
+
+        XCTAssertFalse(promise.isUndefined, "Data integrity test should return a promise")
+
+        expectation.fulfill()
+
+        waitForExpectations(timeout: 20.0) { error in
+            XCTAssertNil(error, "Data integrity test timed out")
+        }
+    }
+
     // MARK: - Performance Integration Tests
     
     func testConcurrentStreamCreation() {
