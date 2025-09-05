@@ -1338,20 +1338,20 @@
       this.#startReading(blob, 'text', encoding);
     }
 
-    // Enhanced method to read FSFile objects directly
+    // Enhanced method to read files directly from filesystem paths
     readAsArrayBufferFromPath(filePath) {
-      const fsFile = new FSFile(filePath);
-      this.#startReading(fsFile.toBlob(), 'arraybuffer');
+      const file = File.fromPath(filePath);
+      this.readAsArrayBuffer(file);
     }
 
     readAsTextFromPath(filePath, encoding = 'utf-8') {
-      const fsFile = new FSFile(filePath);
-      this.#startReading(fsFile.toBlob(), 'text', encoding);
+      const file = File.fromPath(filePath);
+      this.readAsText(file);
     }
 
     readAsDataURLFromPath(filePath) {
-      const fsFile = new FSFile(filePath);
-      this.#startReading(fsFile.toBlob(), 'dataurl');
+      const file = File.fromPath(filePath);
+      this.readAsDataURL(file);
     }
 
     async #startReading(blobOrFile, format, encoding = 'utf-8') {
