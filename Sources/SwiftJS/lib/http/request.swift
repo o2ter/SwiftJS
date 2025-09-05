@@ -28,14 +28,12 @@ import JavaScriptCore
 
 @objc protocol JSURLRequestExport: JSExport {
     init(url: String)
-    static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest
     
     var url: String? { get }
     var httpMethod: String { get set }
     var allHTTPHeaderFields: [String: String] { get set }
     var httpBody: JSValue? { get set }
     var timeoutInterval: Double { get set }
-    var cachePolicy: Int { get set }
     
     func setValueForHTTPHeaderField(_ value: String?, _ field: String)
     func addValueForHTTPHeaderField(_ value: String, _ field: String)
@@ -56,23 +54,6 @@ import JavaScriptCore
         self.request = URLRequest(url: url)
         self.request.httpMethod = "GET" // Set default method
         super.init()
-    }
-    
-    private init(url: String, cachePolicy: Int, timeoutInterval: Double) {
-        guard let url = URL(string: url) else {
-            self.request = URLRequest(url: URL(string: "about:blank")!)
-            super.init()
-            self.request.httpMethod = "GET" // Set default method
-            return
-        }
-        let policy = URLRequest.CachePolicy(rawValue: UInt(cachePolicy)) ?? .useProtocolCachePolicy
-        self.request = URLRequest(url: url, cachePolicy: policy, timeoutInterval: timeoutInterval)
-        self.request.httpMethod = "GET" // Set default method
-        super.init()
-    }
-    
-    static func withCachePolicy(_ url: String, _ cachePolicy: Int, _ timeoutInterval: Double) -> JSURLRequest {
-        return JSURLRequest(url: url, cachePolicy: cachePolicy, timeoutInterval: timeoutInterval)
     }
     
     var url: String? {
@@ -114,14 +95,6 @@ import JavaScriptCore
         set { request.timeoutInterval = newValue }
     }
     
-    var cachePolicy: Int {
-        get { return Int(request.cachePolicy.rawValue) }
-        set { 
-            if let policy = URLRequest.CachePolicy(rawValue: UInt(newValue)) {
-                request.cachePolicy = policy
-            }
-        }
-    }
     
     func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
         request.setValue(value, forHTTPHeaderField: field)

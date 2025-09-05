@@ -1595,7 +1595,6 @@
     #readyState = XMLHttpRequest.UNSENT;
     #responseData = null;
     #responseText = '';
-    #responseXML = null;
     #upload = new EventTarget();
 
     constructor() {
@@ -1610,7 +1609,6 @@
       // Public properties
       this.responseType = '';
       this.timeout = 0;
-      this.withCredentials = false;
       // Event handlers
       this.onreadystatechange = null;
       this.onabort = null;
@@ -1629,7 +1627,6 @@
     get readyState() { return this.#readyState; }
     get response() { return this.#responseData; }
     get responseText() { return this.#responseText; }
-    get responseXML() { return this.#responseXML; }
     get upload() { return this.#upload; }
 
     open(method, url, async = true, user = null, password = null) {
@@ -2015,12 +2012,6 @@
     #method;
     #headers;
     #body;
-    #mode;
-    #credentials;
-    #cache;
-    #redirect;
-    #referrer;
-    #integrity;
     #signal;
     #bodyUsed = false;
 
@@ -2038,12 +2029,6 @@
       this.#method = request.method;
       this.#headers = new Headers(request.headers);
       this.#body = request.body;
-      this.#mode = request.mode;
-      this.#credentials = request.credentials;
-      this.#cache = request.cache;
-      this.#redirect = request.redirect;
-      this.#referrer = request.referrer;
-      this.#integrity = request.integrity;
       this.#signal = request.signal;
     }
 
@@ -2052,12 +2037,6 @@
       this.#method = (init.method || 'GET').toUpperCase();
       this.#headers = new Headers(init.headers);
       this.#body = init.body || null;
-      this.#mode = init.mode || 'cors';
-      this.#credentials = init.credentials || 'same-origin';
-      this.#cache = init.cache || 'default';
-      this.#redirect = init.redirect || 'follow';
-      this.#referrer = init.referrer || 'about:client';
-      this.#integrity = init.integrity || '';
       this.#signal = init.signal || null;
     }
 
@@ -2066,12 +2045,6 @@
     get method() { return this.#method; }
     get headers() { return this.#headers; }
     get body() { return this.#body; }
-    get mode() { return this.#mode; }
-    get credentials() { return this.#credentials; }
-    get cache() { return this.#cache; }
-    get redirect() { return this.#redirect; }
-    get referrer() { return this.#referrer; }
-    get integrity() { return this.#integrity; }
     get signal() { return this.#signal; }
     get bodyUsed() { return this.#bodyUsed; }
 
