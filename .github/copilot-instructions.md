@@ -278,6 +278,31 @@ let script = """
 - Wrapping in parentheses `({ ... })` forces expression context, creating object literal
 - This is standard JavaScript behavior, not a SwiftJS limitation
 
+**IMPORTANT - Debugging Philosophy:**
+When encountering mysterious "undefined" returns or unexpected behavior in JavaScript code, always consider fundamental JavaScript parsing and evaluation rules first:
+- Is the code being parsed as intended? (statement vs expression context)
+- Are there implicit type conversions happening?
+- Is the execution context (this binding, scope) what you expect?
+- Many "SwiftJS bugs" are actually standard JavaScript behaviors that need deeper understanding
+
+**Comparing Success vs Failure Cases:**
+Understanding why some tests pass while others fail reveals the parsing issue:
+
+```swift
+// ✅ SUCCESS - Simple expressions work fine
+"typeof btoa"           // Returns: "function"
+"btoa('hello')"         // Returns: "aGVsbG8="
+"atob('aGVsbG8=')"      // Returns: "hello"
+
+// ❌ FAILURE - Bare object literals return undefined
+"{original: 'test'}"    // Returns: undefined (block statement)
+
+// ✅ SUCCESS - Parentheses fix the parsing
+"({original: 'test'})"  // Returns: {original: 'test'} (object literal)
+```
+
+**Key insight:** The difference is not in the function implementation (btoa/atob work perfectly), but in how JavaScript parses the return value structure. Simple expressions work, but object returns need parentheses to force correct parsing context.
+
 **Common symptoms:**
 - Test assertions fail with "undefined" when expecting object properties
 - `result["property"]` returns undefined even though script logic appears correct
