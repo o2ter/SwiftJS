@@ -450,31 +450,28 @@
         }
       };
     }
-  };
 
-  // Simple FileSystem extensions - no redundant classes
-  Object.assign(FileSystem, {
     // Path utilities
-    join(...parts) {
+    static join(...parts) {
       return parts.join('/').replace(/\/+/g, '/');
-    },
+    }
 
-    dirname(path) {
+    static dirname(path) {
       return path.substring(0, path.lastIndexOf('/')) || '/';
-    },
+    }
 
-    basename(path) {
+    static basename(path) {
       return path.substring(path.lastIndexOf('/') + 1);
-    },
+    }
 
-    extname(path) {
+    static extname(path) {
       const name = this.basename(path);
       const lastDot = name.lastIndexOf('.');
       return lastDot > 0 ? name.substring(lastDot) : '';
-    },
+    }
 
     // Efficient file operations that go through Swift
-    async streamCopy(source, destination, options = {}) {
+    static async streamCopy(source, destination, options = {}) {
       const { onProgress } = options;
 
       if (!this.exists(source)) {
@@ -495,7 +492,7 @@
       // For now, fall back to standard copy
       return this.copy(source, destination, { overwrite: true });
     }
-  });
+  };
 
 
 
