@@ -1367,20 +1367,8 @@
       this.#fireEvent('loadstart');
 
       try {
-        let blob;
-        let useStreaming = false;
-
-        // Handle different input types
-        if (blobOrFile instanceof FSFile) {
-          if (!blobOrFile.exists) {
-            throw new Error(`File not found: ${blobOrFile.path}`);
-          }
-          blob = blobOrFile.toBlob();
-          useStreaming = blobOrFile.size > 1024 * 1024; // Use streaming for files > 1MB
-        } else {
-          blob = blobOrFile;
-          useStreaming = blob.size > 1024 * 1024;
-        }
+        let blob = blobOrFile;
+        let useStreaming = blob.size > 1024 * 1024; // Use streaming for files > 1MB
 
         const total = blob.size || 0;
         let loaded = 0;
