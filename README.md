@@ -201,7 +201,7 @@ SwiftJS provides comprehensive JavaScript APIs:
 - **Process**: `process.pid`, `process.argv`, `process.env`, `process.exit()`
 - **File System**: `FileSystem.readText()`, `FileSystem.writeText()`, etc.
 - **Path**: `Path.join()`, `Path.dirname()`, path manipulation utilities
-- **Streams**: Readable/Writable streams (basic implementation)
+- **Streams**: Full Web Streams API (ReadableStream, WritableStream, TransformStream with backpressure, BYOB readers, and queuing strategies)
 
 ### Platform APIs
 - **Device Info**: Hardware and system information

@@ -581,6 +581,75 @@ await writer.write('World');
 await writer.close();
 ```
 
+#### Advanced Streams Features
+
+**Queuing Strategies:**
+```javascript
+// Count-based queuing
+const countStrategy = new CountQueuingStrategy({ highWaterMark: 5 });
+const stream1 = new ReadableStream({...}, countStrategy);
+
+// Byte-length based queuing
+const byteStrategy = new ByteLengthQueuingStrategy({ highWaterMark: 1024 });
+const stream2 = new ReadableStream({...}, byteStrategy);
+```
+
+**BYOB (Bring Your Own Buffer) Readers:**
+```javascript
+const stream = new ReadableStream({
+    type: 'bytes',
+    pull(controller) {
+        const buffer = new Uint8Array(1024);
+        // Fill buffer with data...
+        controller.enqueue(buffer);
+    }
+});
+
+const reader = stream.getReader({ mode: 'byob' });
+const buffer = new Uint8Array(512);
+const { value, done } = await reader.read(buffer);
+```
+
+**Backpressure Handling:**
+```javascript
+const writable = new WritableStream({
+    write(chunk, controller) {
+        // Slow processing simulation
+        return new Promise(resolve => setTimeout(resolve, 100));
+    }
+}, new CountQueuingStrategy({ highWaterMark: 3 }));
+
+const writer = writable.getWriter();
+
+// Check backpressure
+if (writer.desiredSize <= 0) {
+    await writer.ready; // Wait for backpressure to be relieved
+}
+await writer.write(data);
+```
+
+**Advanced Transform Streams:**
+```javascript
+const compressionTransform = new TransformStream({
+    start(controller) {
+        this.buffer = '';
+    },
+    transform(chunk, controller) {
+        this.buffer += chunk;
+        // Batch processing
+        if (this.buffer.length >= 100) {
+            controller.enqueue(this.buffer.toUpperCase());
+            this.buffer = '';
+        }
+    },
+    flush(controller) {
+        if (this.buffer) {
+            controller.enqueue(this.buffer.toUpperCase());
+        }
+    }
+});
+```
+
 ## Node.js-like APIs
 
 SwiftJS provides Node.js-compatible APIs for server-side development patterns:

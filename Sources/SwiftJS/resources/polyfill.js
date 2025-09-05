@@ -2665,11 +2665,22 @@
     }
 
     enqueue(chunk) {
-      if (this.#internal.state !== 'readable') return;
+      if (this.#internal.state !== 'readable') {
+        throw new TypeError('Cannot enqueue chunk after stream is closed or errored');
+      }
+
+      // Check if we're over the high water mark (backpressure)
+      const chunkSize = this.#internal.sizeAlgorithm(chunk);
+      this.#internal.queueTotalSize += chunkSize;
+
       this.#internal.queue.push(chunk);
+      
+      // Process pending read requests
       while (this.#internal.readRequests.length > 0 && this.#internal.queue.length > 0) {
         const { resolve } = this.#internal.readRequests.shift();
         const value = this.#internal.queue.shift();
+        const valueSize = this.#internal.sizeAlgorithm(value);
+        this.#internal.queueTotalSize = Math.max(0, this.#internal.queueTotalSize - valueSize);
         resolve({ value, done: false });
       }
     }
@@ -2677,9 +2688,16 @@
     close() {
       if (this.#internal.state !== 'readable') return;
       this.#internal.state = 'closed';
+      
+      // Resolve all pending read requests with done: true
       while (this.#internal.readRequests.length > 0) {
         const { resolve } = this.#internal.readRequests.shift();
         resolve({ value: undefined, done: true });
+      }
+
+      // Resolve close promise if it exists
+      if (this.#internal.closePromise) {
+        this.#internal.closePromise.resolve();
       }
     }
 
@@ -2687,25 +2705,51 @@
       if (this.#internal.state !== 'readable') return;
       this.#internal.state = 'errored';
       this.#internal.storedError = err;
+      
+      // Reject all pending read requests
       while (this.#internal.readRequests.length > 0) {
         const { reject } = this.#internal.readRequests.shift();
         reject(err);
       }
+
+      // Reject close promise if it exists
+      if (this.#internal.closePromise) {
+        this.#internal.closePromise.reject(err);
+      }
+    }
+
+    get desiredSize() {
+      if (this.#internal.state === 'closed' || this.#internal.state === 'errored') {
+        return null;
+      }
+      return this.#internal.highWaterMark - this.#internal.queueTotalSize;
     }
   }
 
   globalThis.ReadableStream = class ReadableStream {
-    constructor(underlyingSource = {}, strategy) {
-      // Per-instance internal storage
+    constructor(underlyingSource = {}, strategy = {}) {
+      // Validate and set up strategy
+      const queuingStrategy = strategy || {};
+      const highWaterMark = queuingStrategy.highWaterMark ?? 1;
+      const sizeAlgorithm = queuingStrategy.size || (() => 1);
+
+      // Per-instance internal storage with enhanced properties
       this[SYMBOLS.streamInternal] = {
         underlyingSource: underlyingSource,
-        strategy: strategy || {},
+        strategy: queuingStrategy,
+        highWaterMark: highWaterMark,
+        sizeAlgorithm: sizeAlgorithm,
         queue: [],
+        queueTotalSize: 0,
         readRequests: [],
         state: 'readable',
         storedError: undefined,
         controller: null,
-        pulling: false
+        pulling: false,
+        pullAgain: false,
+        reader: null,
+        closePromise: null,
+        mode: underlyingSource.type === 'bytes' ? 'byob' : 'default'
       };
 
       // create controller and store reference
@@ -2713,59 +2757,152 @@
       this[SYMBOLS.streamInternal].controller = controller;
 
       if (underlyingSource.start) {
-        try { underlyingSource.start(controller); } catch (e) { controller.error(e); }
+        try { 
+          const startResult = underlyingSource.start(controller); 
+          if (startResult && typeof startResult.then === 'function') {
+            startResult.catch(e => controller.error(e));
+          }
+        } catch (e) { 
+          controller.error(e); 
+        }
       }
     }
 
-    getReader() {
+    getReader(options = {}) {
+      if (this[SYMBOLS.streamInternal].reader) {
+        throw new TypeError('ReadableStream is already locked to a reader');
+      }
+
+      const mode = options.mode;
+      if (mode === 'byob') {
+        if (this[SYMBOLS.streamInternal].mode !== 'byob') {
+          throw new TypeError('Cannot get BYOB reader for non-byte stream');
+        }
+        const reader = new ReadableStreamBYOBReader(this);
+        this[SYMBOLS.streamInternal].reader = reader;
+        return reader;
+      }
+
       const stream = this;
-      return new (class ReadableStreamDefaultReader {
+      const reader = new (class ReadableStreamDefaultReader {
         #released = false;
         constructor() { this.#released = false; }
 
         read() {
+          if (this.#released) {
+            return Promise.reject(new TypeError('Reader has been released'));
+          }
+
           const s = stream[SYMBOLS.streamInternal];
           if (s.state === 'errored') return Promise.reject(s.storedError);
+          
           if (s.queue.length > 0) {
-            const value = s.queue.shift();
-            return Promise.resolve({ value, done: false });
+            const chunk = s.queue.shift();
+            const chunkSize = s.sizeAlgorithm(chunk);
+            s.queueTotalSize = Math.max(0, s.queueTotalSize - chunkSize);
+            
+            // Check if we should pull more data (backpressure management)
+            if (s.queueTotalSize < s.highWaterMark && !s.pulling) {
+              this.#requestPull();
+            }
+            
+            return Promise.resolve({ value: chunk, done: false });
           }
+          
           if (s.state === 'closed') return Promise.resolve({ value: undefined, done: true });
           
           const deferred = createDeferred();
           s.readRequests.push(deferred);
-          
-          // CRITICAL FIX: Call the pull method if available to generate more data
-          if (s.underlyingSource && s.underlyingSource.pull && !s.pulling) {
-            s.pulling = true;
-            try {
-              const pullResult = s.underlyingSource.pull(s.controller);
-              if (pullResult && typeof pullResult.then === 'function') {
-                pullResult.then(() => { s.pulling = false; }).catch(e => { s.pulling = false; s.controller.error(e); });
-              } else {
-                s.pulling = false;
-              }
-            } catch (e) {
-              s.pulling = false;
-              s.controller.error(e);
-            }
-          }
-          
+          this.#requestPull();
           return deferred.promise;
         }
 
-        releaseLock() { this.#released = true; }
+        #requestPull() {
+          const s = stream[SYMBOLS.streamInternal];
+          if (!s.underlyingSource?.pull || s.pulling) {
+            if (s.pulling) s.pullAgain = true;
+            return;
+          }
+
+          s.pulling = true;
+          try {
+            const pullResult = s.underlyingSource.pull(s.controller);
+            if (pullResult && typeof pullResult.then === 'function') {
+              pullResult.then(() => {
+                s.pulling = false;
+                if (s.pullAgain) {
+                  s.pullAgain = false;
+                  this.#requestPull();
+                }
+              }).catch(e => {
+                s.pulling = false;
+                s.controller.error(e);
+              });
+            } else {
+              s.pulling = false;
+              if (s.pullAgain) {
+                s.pullAgain = false;
+                this.#requestPull();
+              }
+            }
+          } catch (e) {
+            s.pulling = false;
+            s.controller.error(e);
+          }
+        }
+
+        releaseLock() {
+          if (this.#released) return;
+          this.#released = true;
+          stream[SYMBOLS.streamInternal].reader = null;
+        }
+
+        get closed() {
+          const s = stream[SYMBOLS.streamInternal];
+          if (s.state === 'closed') return Promise.resolve();
+          if (s.state === 'errored') return Promise.reject(s.storedError);
+          
+          if (!s.closePromise) {
+            s.closePromise = createDeferred();
+          }
+          return s.closePromise.promise;
+        }
 
         cancel(reason) {
-          const s = stream[SYMBOLS.streamInternal];
-          s.readRequests.forEach(r => r.reject(reason));
-          s.readRequests = [];
-          if (s.underlyingSource && s.underlyingSource.cancel) {
-            try { return Promise.resolve(s.underlyingSource.cancel(reason)); } catch (e) { return Promise.reject(e); }
-          }
-          return Promise.resolve();
+          return stream.cancel(reason);
         }
       })();
+
+      this[SYMBOLS.streamInternal].reader = reader;
+      return reader;
+    }
+
+    cancel(reason) {
+      const s = this[SYMBOLS.streamInternal];
+      if (s.state === 'closed') return Promise.resolve();
+      if (s.state === 'errored') return Promise.reject(s.storedError);
+
+      // Reject all pending read requests
+      s.readRequests.forEach(r => r.reject(reason));
+      s.readRequests = [];
+      
+      // Mark as closed
+      s.state = 'closed';
+      
+      // Call underlying source cancel if available
+      if (s.underlyingSource && s.underlyingSource.cancel) {
+        try { 
+          const cancelResult = s.underlyingSource.cancel(reason);
+          return Promise.resolve(cancelResult);
+        } catch (e) { 
+          return Promise.reject(e); 
+        }
+      }
+      return Promise.resolve();
+    }
+
+    get locked() {
+      return this[SYMBOLS.streamInternal].reader !== null;
     }
 
     tee() {
@@ -2962,89 +3099,259 @@
     }
 
     error(err) {
+      if (this.#internal.state === 'errored') return;
       this.#internal.state = 'errored';
       this.#internal.storedError = err;
+      
+      // Reject all pending writes
+      this.#internal.writeQueue.forEach(item => item.reject(err));
+      this.#internal.writeQueue = [];
+
+      // Reject close promise if it exists
+      if (this.#internal.closePromise) {
+        this.#internal.closePromise.reject(err);
+      }
+    }
+
+    get signal() {
+      // Return an AbortSignal that can be used to abort operations
+      // This is a simplified implementation
+      return null;
     }
   }
 
   globalThis.WritableStream = class WritableStream {
-    constructor(underlyingSink = {}, strategy) {
-      // per-instance internal storage
+    constructor(underlyingSink = {}, strategy = {}) {
+      // Validate and set up strategy
+      const queuingStrategy = strategy || {};
+      const highWaterMark = queuingStrategy.highWaterMark ?? 1;
+      const sizeAlgorithm = queuingStrategy.size || (() => 1);
+
+      // per-instance internal storage with enhanced properties
       this[SYMBOLS.streamInternal] = {
         underlyingSink: underlyingSink,
-        strategy: strategy || {},
+        strategy: queuingStrategy,
+        highWaterMark: highWaterMark,
+        sizeAlgorithm: sizeAlgorithm,
         state: 'writable',
         storedError: undefined,
         controller: null,
         writing: false,
-        writeQueue: []
+        writeQueue: [],
+        queueTotalSize: 0,
+        writer: null,
+        closePromise: null,
+        abortPromise: null
       };
 
       const controller = new WritableStreamDefaultController(this, underlyingSink);
       this[SYMBOLS.streamInternal].controller = controller;
+
+      if (underlyingSink.start) {
+        try {
+          const startResult = underlyingSink.start(controller);
+          if (startResult && typeof startResult.then === 'function') {
+            startResult.catch(e => controller.error(e));
+          }
+        } catch (e) {
+          controller.error(e);
+        }
+      }
     }
 
     getWriter() {
+      if (this[SYMBOLS.streamInternal].writer) {
+        throw new TypeError('WritableStream is already locked to a writer');
+      }
+
       const stream = this;
-      return new (class WritableStreamDefaultWriter {
+      const writer = new (class WritableStreamDefaultWriter {
+        #released = false;
+
         write(chunk) {
+          if (this.#released) {
+            return Promise.reject(new TypeError('Writer has been released'));
+          }
+
           const s = stream[SYMBOLS.streamInternal];
           if (s.state === 'errored') return Promise.reject(s.storedError);
-          if (s.state === 'closed') return Promise.reject(new TypeError('Cannot write to closed stream'));
-          const promise = new Promise((resolve, reject) => {
-            s.writeQueue.push({ chunk, resolve, reject });
-            scheduleWrite();
-          });
-          function scheduleWrite() {
-            if (s.writing) return;
-            const item = s.writeQueue.shift();
-            if (!item) return;
-            s.writing = true;
-            try {
-              const underlying = s.underlyingSink;
-              const r = underlying && underlying.write ? underlying.write(item.chunk) : Promise.resolve();
-              Promise.resolve(r).then(() => {
-                s.writing = false;
-                item.resolve();
-                scheduleWrite();
-              }, (e) => {
-                s.writing = false;
-                item.reject(e);
-                s.controller.error(e);
-              });
-            } catch (e) {
-              s.writing = false;
-              item.reject(e);
-              s.controller.error(e);
-            }
+          if (s.state === 'closed' || s.state === 'closing') {
+            return Promise.reject(new TypeError('Cannot write to closed stream'));
           }
+
+          const chunkSize = s.sizeAlgorithm(chunk);
+          const promise = new Promise((resolve, reject) => {
+            s.writeQueue.push({ chunk, chunkSize, resolve, reject });
+            s.queueTotalSize += chunkSize;
+            this.#scheduleWrite();
+          });
+
           return promise;
         }
 
-        close() {
+        #scheduleWrite() {
           const s = stream[SYMBOLS.streamInternal];
-          if (s.state === 'errored') return Promise.reject(s.storedError);
-          if (s.underlyingSink && s.underlyingSink.close) {
-            try { const r = s.underlyingSink.close(); s.state = 'closed'; return Promise.resolve(r); } catch (e) { s.controller.error(e); return Promise.reject(e); }
+          if (s.writing || s.writeQueue.length === 0) return;
+
+          const item = s.writeQueue.shift();
+          if (!item) return;
+
+          s.queueTotalSize = Math.max(0, s.queueTotalSize - item.chunkSize);
+          s.writing = true;
+
+          try {
+            if (s.underlyingSink.write) {
+              const writeResult = s.underlyingSink.write(item.chunk, s.controller);
+              if (writeResult && typeof writeResult.then === 'function') {
+                writeResult.then(() => {
+                  s.writing = false;
+                  item.resolve();
+                  this.#scheduleWrite(); // Process next item
+                }).catch(e => {
+                  s.writing = false;
+                  s.controller.error(e);
+                  item.reject(e);
+                });
+              } else {
+                s.writing = false;
+                item.resolve();
+                this.#scheduleWrite();
+              }
+            } else {
+              s.writing = false;
+              item.resolve();
+              this.#scheduleWrite();
+            }
+          } catch (e) {
+            s.writing = false;
+            s.controller.error(e);
+            item.reject(e);
           }
-          s.state = 'closed';
-          return Promise.resolve();
+        }
+
+        close() {
+          if (this.#released) {
+            return Promise.reject(new TypeError('Writer has been released'));
+          }
+
+          const s = stream[SYMBOLS.streamInternal];
+          if (s.state === 'closed' || s.state === 'closing') {
+            return Promise.reject(new TypeError('Stream is already closed or closing'));
+          }
+
+          s.state = 'closing';
+
+          return new Promise((resolve, reject) => {
+            // Wait for all writes to complete, then close
+            const waitForWrites = () => {
+              if (s.writing || s.writeQueue.length > 0) {
+                setTimeout(waitForWrites, 0);
+                return;
+              }
+
+              try {
+                if (s.underlyingSink.close) {
+                  const closeResult = s.underlyingSink.close();
+                  if (closeResult && typeof closeResult.then === 'function') {
+                    closeResult.then(() => {
+                      s.state = 'closed';
+                      resolve();
+                    }).catch(reject);
+                  } else {
+                    s.state = 'closed';
+                    resolve();
+                  }
+                } else {
+                  s.state = 'closed';
+                  resolve();
+                }
+              } catch (e) {
+                reject(e);
+              }
+            };
+
+            waitForWrites();
+          });
         }
 
         abort(reason) {
-          const s = stream[SYMBOLS.streamInternal];
-          if (s.underlyingSink && s.underlyingSink.abort) {
-            try { return Promise.resolve(s.underlyingSink.abort(reason)); } catch (e) { return Promise.reject(e); }
+          if (this.#released) {
+            return Promise.reject(new TypeError('Writer has been released'));
           }
-          s.state = 'errored';
-          s.storedError = reason instanceof Error ? reason : new Error(String(reason));
-          return Promise.resolve();
+
+          return stream.abort(reason);
         }
 
         releaseLock() {
-          // Method to release the writer lock, allowing other writers to be obtained
+          if (this.#released) return;
+          this.#released = true;
+          stream[SYMBOLS.streamInternal].writer = null;
+        }
+
+        get closed() {
+          const s = stream[SYMBOLS.streamInternal];
+          if (s.state === 'closed') return Promise.resolve();
+          if (s.state === 'errored') return Promise.reject(s.storedError);
+
+          if (!s.closePromise) {
+            s.closePromise = createDeferred();
+          }
+          return s.closePromise.promise;
+        }
+
+        get desiredSize() {
+          const s = stream[SYMBOLS.streamInternal];
+          if (s.state === 'closed' || s.state === 'errored') return null;
+          return s.highWaterMark - s.queueTotalSize;
+        }
+
+        get ready() {
+          const s = stream[SYMBOLS.streamInternal];
+          if (s.state === 'errored') return Promise.reject(s.storedError);
+          if (s.queueTotalSize < s.highWaterMark) return Promise.resolve();
+
+          // Return a promise that resolves when backpressure is relieved
+          return new Promise(resolve => {
+            const checkBackpressure = () => {
+              if (s.queueTotalSize < s.highWaterMark) {
+                resolve();
+              } else {
+                setTimeout(checkBackpressure, 0);
+              }
+            };
+            checkBackpressure();
+          });
         }
       })();
+
+      this[SYMBOLS.streamInternal].writer = writer;
+      return writer;
+    }
+
+    abort(reason) {
+      const s = this[SYMBOLS.streamInternal];
+      if (s.state === 'closed') return Promise.resolve();
+      if (s.state === 'errored') return Promise.reject(s.storedError);
+
+      s.state = 'errored';
+      s.storedError = reason instanceof Error ? reason : new Error(String(reason));
+
+      // Reject all pending writes
+      s.writeQueue.forEach(item => item.reject(s.storedError));
+      s.writeQueue = [];
+
+      if (s.underlyingSink && s.underlyingSink.abort) {
+        try {
+          return Promise.resolve(s.underlyingSink.abort(reason));
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      }
+      return Promise.resolve();
+    }
+
+    get locked() {
+      return this[SYMBOLS.streamInternal].writer !== null;
     }
   }
 
@@ -3056,54 +3363,119 @@
         writable: null,
         readable: null,
         readableController: null,
-        writableController: null
+        writableController: null,
+        transforming: false,
+        backpressure: false,
+        backpressurePromise: null
       };
 
       const ts = this;
 
+      // Enhanced readable side with proper transform integration
       const readable = new ReadableStream({
         start(controller) {
           ts[SYMBOLS.streamInternal].readableController = controller;
-        },
-        transform(chunk, controller) {
-          try {
-            if (transformer.transform) {
-              const result = transformer.transform(chunk, ts[SYMBOLS.streamInternal].readableController);
-              return Promise.resolve(result);
+          if (transformer.start) {
+            try {
+              const startResult = transformer.start(controller);
+              if (startResult && typeof startResult.then === 'function') {
+                return startResult;
+              }
+            } catch (e) {
+              controller.error(e);
+              throw e;
             }
-            ts[SYMBOLS.streamInternal].readableController.enqueue(chunk);
-            return Promise.resolve();
-          } catch (e) {
-            ts[SYMBOLS.streamInternal].readableController.error(e);
-            return Promise.reject(e);
           }
         },
-        flush(controller) {
-          if (transformer.flush) {
-            return transformer.flush(ts[SYMBOLS.streamInternal].readableController);
+        pull(controller) {
+          // Handle backpressure from readable side
+          if (ts[SYMBOLS.streamInternal].backpressure) {
+            ts[SYMBOLS.streamInternal].backpressure = false;
+            if (ts[SYMBOLS.streamInternal].backpressurePromise) {
+              ts[SYMBOLS.streamInternal].backpressurePromise.resolve();
+              ts[SYMBOLS.streamInternal].backpressurePromise = null;
+            }
           }
+        },
+        cancel(reason) {
+          if (transformer.cancel) {
+            return transformer.cancel(reason);
+          }
+          return Promise.resolve();
         }
       }, readableStrategy);
 
+      // Enhanced writable side with proper transform integration
       const writable = new WritableStream({
         start(controller) {
           ts[SYMBOLS.streamInternal].writableController = controller;
         },
-        write(chunk) {
-          try {
-            if (transformer.transform) {
-              const result = transformer.transform(chunk, ts[SYMBOLS.streamInternal].readableController);
-              return Promise.resolve(result);
+        write(chunk, controller) {
+          return new Promise((resolve, reject) => {
+            try {
+              const readableController = ts[SYMBOLS.streamInternal].readableController;
+              
+              if (transformer.transform) {
+                const transformResult = transformer.transform(chunk, readableController);
+                
+                if (transformResult && typeof transformResult.then === 'function') {
+                  transformResult.then(() => resolve()).catch(e => {
+                    readableController.error(e);
+                    reject(e);
+                  });
+                } else {
+                  resolve();
+                }
+              } else {
+                // Default transform: pass through
+                readableController.enqueue(chunk);
+                resolve();
+              }
+            } catch (e) {
+              ts[SYMBOLS.streamInternal].readableController.error(e);
+              reject(e);
             }
-            ts[SYMBOLS.streamInternal].readableController.enqueue(chunk);
-            return Promise.resolve();
-          } catch (e) {
-            ts[SYMBOLS.streamInternal].readableController.error(e);
-            return Promise.reject(e);
-          }
+          });
         },
-        close() { ts[SYMBOLS.streamInternal].readableController.close(); },
-        abort(reason) { ts[SYMBOLS.streamInternal].readableController.error(reason); }
+        close() {
+          return new Promise((resolve, reject) => {
+            try {
+              const readableController = ts[SYMBOLS.streamInternal].readableController;
+              
+              if (transformer.flush) {
+                const flushResult = transformer.flush(readableController);
+                
+                if (flushResult && typeof flushResult.then === 'function') {
+                  flushResult.then(() => {
+                    readableController.close();
+                    resolve();
+                  }).catch(e => {
+                    readableController.error(e);
+                    reject(e);
+                  });
+                } else {
+                  readableController.close();
+                  resolve();
+                }
+              } else {
+                readableController.close();
+                resolve();
+              }
+            } catch (e) {
+              ts[SYMBOLS.streamInternal].readableController.error(e);
+              reject(e);
+            }
+          });
+        },
+        abort(reason) {
+          const readableController = ts[SYMBOLS.streamInternal].readableController;
+          readableController.error(reason);
+          
+          if (transformer.cancel) {
+            return transformer.cancel(reason);
+          }
+          return Promise.resolve();
+        }
       }, writableStrategy);
 
       this[SYMBOLS.streamInternal].readable = readable;
@@ -3113,4 +3485,120 @@
     get readable() { return this[SYMBOLS.streamInternal].readable; }
     get writable() { return this[SYMBOLS.streamInternal].writable; }
   }
+
+  // Queuing Strategies - Web Streams Standard
+  globalThis.CountQueuingStrategy = class CountQueuingStrategy {
+    constructor(options) {
+      if (!options || typeof options.highWaterMark !== 'number') {
+        throw new TypeError('CountQueuingStrategy expects options with highWaterMark');
+      }
+      this.highWaterMark = options.highWaterMark;
+    }
+
+    size(chunk) {
+      return 1;
+    }
+  };
+
+  globalThis.ByteLengthQueuingStrategy = class ByteLengthQueuingStrategy {
+    constructor(options) {
+      if (!options || typeof options.highWaterMark !== 'number') {
+        throw new TypeError('ByteLengthQueuingStrategy expects options with highWaterMark');
+      }
+      this.highWaterMark = options.highWaterMark;
+    }
+
+    size(chunk) {
+      if (chunk == null) return 0;
+      if (typeof chunk === 'string') return new TextEncoder().encode(chunk).byteLength;
+      if (chunk instanceof ArrayBuffer) return chunk.byteLength;
+      if (ArrayBuffer.isView(chunk)) return chunk.byteLength;
+      if (chunk instanceof Blob) return chunk.size;
+      if (typeof chunk === 'object' && chunk.length !== undefined) return chunk.length;
+      return 0;
+    }
+  };
+
+  // Enhanced Readable Stream BYOB (Bring Your Own Buffer) Reader
+  class ReadableStreamBYOBReader {
+    #stream;
+    #released = false;
+
+    constructor(stream) {
+      this.#stream = stream;
+    }
+
+    read(view) {
+      if (this.#released) {
+        return Promise.reject(new TypeError('Reader has been released'));
+      }
+
+      if (!ArrayBuffer.isView(view)) {
+        return Promise.reject(new TypeError('view must be an ArrayBuffer view'));
+      }
+
+      const s = this.#stream[SYMBOLS.streamInternal];
+      if (s.state === 'errored') return Promise.reject(s.storedError);
+      if (s.state === 'closed') return Promise.resolve({ value: view, done: true });
+
+      // Simplified BYOB implementation - in a full implementation this would
+      // interact with the underlying byte source more efficiently
+      const deferred = createDeferred();
+      s.readRequests.push({
+        ...deferred,
+        view: view,
+        byob: true
+      });
+
+      this.#tryFillFromQueue();
+      return deferred.promise;
+    }
+
+    #tryFillFromQueue() {
+      const s = this.#stream[SYMBOLS.streamInternal];
+      while (s.readRequests.length > 0 && s.queue.length > 0) {
+        const request = s.readRequests[0];
+        if (!request.byob) break; // Only handle BYOB requests here
+
+        const chunk = s.queue.shift();
+        s.readRequests.shift();
+
+        if (chunk instanceof Uint8Array && request.view instanceof Uint8Array) {
+          const bytesToCopy = Math.min(chunk.length, request.view.length);
+          request.view.set(chunk.subarray(0, bytesToCopy));
+          
+          if (chunk.length > bytesToCopy) {
+            // Put remaining bytes back in queue
+            s.queue.unshift(chunk.subarray(bytesToCopy));
+          }
+
+          const filledView = request.view.subarray(0, bytesToCopy);
+          request.resolve({ value: filledView, done: false });
+        } else {
+          // Fallback for non-byte data
+          request.resolve({ value: request.view, done: false });
+        }
+      }
+    }
+
+    releaseLock() {
+      this.#released = true;
+    }
+
+    get closed() {
+      const s = this.#stream[SYMBOLS.streamInternal];
+      if (s.state === 'closed') return Promise.resolve();
+      if (s.state === 'errored') return Promise.reject(s.storedError);
+      return new Promise((resolve, reject) => {
+        if (!s.closePromise) {
+          s.closePromise = { resolve, reject };
+        }
+      });
+    }
+
+    cancel(reason) {
+      return this.#stream.cancel(reason);
+    }
+  }
+
 })();
