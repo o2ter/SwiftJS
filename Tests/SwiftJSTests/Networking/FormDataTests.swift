@@ -353,4 +353,175 @@ final class FormDataTests: XCTestCase {
         let result = context.evaluateScript(script)
         XCTAssertTrue(result.boolValue ?? false)
     }
+    
+    // MARK: - File Streaming Tests
+
+    func testFileStreamingWithFetch() {
+        let expectation = XCTestExpectation(description: "File streaming test")
+
+        let script = """
+                async function testFileStreaming() {
+                    try {
+                        // Create a temporary file using FileSystem.temp
+                        const tempDir = FileSystem.temp.createDirectory();
+                        const filePath = Path.join(tempDir, 'streaming-test.txt');
+                        
+                        // Create test content
+                        const testContent = 'Hello, Streaming World! 🚀\\n'.repeat(1000);
+                        FileSystem.writeFile(filePath, testContent);
+                        
+                        // Create File from path
+                        const file = File.fromPath(filePath);
+                        
+                        // Create FormData with the file
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('description', 'Streaming test file');
+                        
+                        // Use httpbin.org echo service to test upload
+                        const response = await fetch('https://httpbin.org/post', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        
+                        const responseData = await response.json();
+                        
+                        // Cleanup
+                        FileSystem.removeFile(filePath);
+                        FileSystem.removeDirectory(tempDir);
+                        
+                        // Verify the file was uploaded and echoed back
+                        return {
+                            success: true,
+                            hasFiles: responseData.files && Object.keys(responseData.files).length > 0,
+                            hasFormData: responseData.form && responseData.form.description === 'Streaming test file',
+                            originalSize: testContent.length,
+                            responseType: typeof responseData
+                        };
+                    } catch (error) {
+                        return { success: false, error: error.message };
+                    }
+                }
+                
+                testFileStreaming().then(result => {
+                    testCompleted(result);
+                }).catch(error => {
+                    testCompleted({ success: false, error: error.message });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertTrue(result["success"].boolValue ?? false, "Streaming test should succeed")
+            XCTAssertTrue(
+                result["hasFiles"].boolValue ?? false, "Response should contain uploaded files")
+            XCTAssertTrue(
+                result["hasFormData"].boolValue ?? false, "Response should contain form data")
+            XCTAssertGreaterThan(
+                result["originalSize"].numberValue ?? 0, 1000,
+                "File should have substantial content")
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 30.0)
+    }
+
+    func testFileStreamingWithXMLHttpRequest() {
+        let expectation = XCTestExpectation(description: "XHR file streaming test")
+
+        let script = """
+                function testXHRFileStreaming() {
+                    // Create a temporary file using FileSystem.temp
+                    const tempDir = FileSystem.temp.createDirectory();
+                    const filePath = Path.join(tempDir, 'xhr-streaming-test.txt');
+                    
+                    // Create test content
+                    const testContent = 'XHR Streaming Test Data! 📡\\n'.repeat(500);
+                    FileSystem.writeFile(filePath, testContent);
+                    
+                    // Create File from path
+                    const file = File.fromPath(filePath);
+                    
+                    // Create FormData with the file
+                    const formData = new FormData();
+                    formData.append('testfile', file);
+                    formData.append('metadata', JSON.stringify({ 
+                        test: 'xhr-streaming',
+                        timestamp: Date.now() 
+                    }));
+                    
+                    // Create XMLHttpRequest
+                    const xhr = new XMLHttpRequest();
+                    
+                    xhr.onreadystatechange = function() {
+                        if (xhr.readyState === 4) {
+                            try {
+                                // Cleanup
+                                FileSystem.removeFile(filePath);
+                                FileSystem.removeDirectory(tempDir);
+                                
+                                if (xhr.status === 200) {
+                                    const responseData = JSON.parse(xhr.responseText);
+                                    testCompleted({
+                                        success: true,
+                                        hasFiles: responseData.files && Object.keys(responseData.files).length > 0,
+                                        hasFormData: responseData.form && responseData.form.metadata,
+                                        status: xhr.status,
+                                        originalSize: testContent.length
+                                    });
+                                } else {
+                                    testCompleted({ 
+                                        success: false, 
+                                        error: `HTTP ${xhr.status}: ${xhr.statusText}` 
+                                    });
+                                }
+                            } catch (error) {
+                                testCompleted({ success: false, error: error.message });
+                            }
+                        }
+                    };
+                    
+                    xhr.onerror = function() {
+                        // Cleanup on error
+                        try {
+                            FileSystem.removeFile(filePath);
+                            FileSystem.removeDirectory(tempDir);
+                        } catch (e) {}
+                        testCompleted({ success: false, error: 'Network error' });
+                    };
+                    
+                    xhr.open('POST', 'https://httpbin.org/post');
+                    xhr.send(formData);
+                }
+                
+                testXHRFileStreaming();
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            XCTAssertTrue(result["success"].boolValue ?? false, "XHR streaming test should succeed")
+            XCTAssertTrue(
+                result["hasFiles"].boolValue ?? false, "Response should contain uploaded files")
+            XCTAssertTrue(
+                result["hasFormData"].boolValue ?? false, "Response should contain form data")
+            XCTAssertEqual(
+                Int(result["status"].numberValue ?? 0), 200, "Should get HTTP 200 response")
+            XCTAssertGreaterThan(
+                result["originalSize"].numberValue ?? 0, 500, "File should have substantial content"
+            )
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 30.0)
+    }
 }

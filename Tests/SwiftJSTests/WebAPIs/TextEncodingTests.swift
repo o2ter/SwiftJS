@@ -476,4 +476,181 @@ final class TextEncodingTests: XCTestCase {
             XCTAssertTrue(result["isStream"].boolValue ?? result["error"].isString)
         }
     }
+    
+    // MARK: - Base64 Encoding Tests
+
+    func testBtoaExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof btoa")
+        XCTAssertEqual(result.toString(), "function")
+    }
+
+    func testAtobExists() {
+        let context = SwiftJS()
+        let result = context.evaluateScript("typeof atob")
+        XCTAssertEqual(result.toString(), "function")
+    }
+
+    func testBtoaBasicEncoding() {
+        let script = """
+                btoa('hello')
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+        XCTAssertEqual(result.toString(), "aGVsbG8=")
+    }
+
+    func testAtobBasicDecoding() {
+        let script = """
+                atob('aGVsbG8=')
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+        XCTAssertEqual(result.toString(), "hello")
+    }
+
+    func testBtoaAtobRoundTrip() {
+        let script = """
+                // Test with Latin1 characters only (btoa standard behavior)
+                const original = 'Hello, World!';
+                const encoded = btoa(original);
+                const decoded = atob(encoded);
+                {
+                    original: original,
+                    encoded: encoded,
+                    decoded: decoded,
+                    matches: original === decoded
+                }
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+
+        XCTAssertEqual(result["original"].toString(), "Hello, World!")
+        XCTAssertTrue(result["encoded"].toString().count > 0)
+        XCTAssertEqual(result["decoded"].toString(), "Hello, World!")
+        XCTAssertTrue(result["matches"].boolValue ?? false)
+    }
+
+    func testBtoaUnicodeError() {
+        let script = """
+                try {
+                    btoa('Hello, World! 🌍');  // Contains Unicode character
+                    { success: true, error: null }
+                } catch (error) {
+                    { success: false, error: error.message }
+                }
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+
+        // btoa should throw an error for Unicode characters outside Latin1 range
+        XCTAssertFalse(result["success"].boolValue ?? true)
+        XCTAssertTrue(result["error"].toString().contains("Latin1"))
+    }
+
+    func testBtoaEmptyString() {
+        let script = """
+                btoa('')
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+        XCTAssertEqual(result.toString(), "")
+    }
+
+    func testAtobEmptyString() {
+        let script = """
+                atob('')
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+        XCTAssertEqual(result.toString(), "")
+    }
+
+    func testBtoaSpecialCharacters() {
+        let script = """
+                const testCases = [
+                    { input: 'A', expected: 'QQ==' },
+                    { input: 'AB', expected: 'QUI=' },
+                    { input: 'ABC', expected: 'QUJD' },
+                    { input: 'Man', expected: 'TWFu' },
+                    { input: 'sure.', expected: 'c3VyZS4=' }
+                ];
+                
+                testCases.map(test => ({
+                    input: test.input,
+                    actual: btoa(test.input),
+                    expected: test.expected,
+                    matches: btoa(test.input) === test.expected
+                }))
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+
+        for i in 0..<5 {
+            let testCase = result[i]
+            let input = testCase["input"].toString()
+            let actual = testCase["actual"].toString()
+            let expected = testCase["expected"].toString()
+            let matches = testCase["matches"].boolValue ?? false
+
+            XCTAssertTrue(matches, "btoa('\(input)') should be '\(expected)' but got '\(actual)'")
+        }
+    }
+
+    func testAtobSpecialCharacters() {
+        let script = """
+                const testCases = [
+                    { input: 'QQ==', expected: 'A' },
+                    { input: 'QUI=', expected: 'AB' },
+                    { input: 'QUJD', expected: 'ABC' },
+                    { input: 'TWFu', expected: 'Man' },
+                    { input: 'c3VyZS4=', expected: 'sure.' }
+                ];
+                
+                testCases.map(test => ({
+                    input: test.input,
+                    actual: atob(test.input),
+                    expected: test.expected,
+                    matches: atob(test.input) === test.expected
+                }))
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+
+        for i in 0..<5 {
+            let testCase = result[i]
+            let input = testCase["input"].toString()
+            let actual = testCase["actual"].toString()
+            let expected = testCase["expected"].toString()
+            let matches = testCase["matches"].boolValue ?? false
+
+            XCTAssertTrue(matches, "atob('\(input)') should be '\(expected)' but got '\(actual)'")
+        }
+    }
+
+    func testBase64DataURLUsage() {
+        let script = """
+                // Test btoa for creating data URLs (common use case)
+                const text = 'Hello, Data URL!';  // Latin1 characters only
+                const base64 = btoa(text);
+                const dataURL = 'data:text/plain;base64,' + base64;
+                const decoded = atob(base64);
+                
+                {
+                    original: text,
+                    base64: base64,
+                    dataURL: dataURL,
+                    decoded: decoded,
+                    roundTripSuccess: text === decoded
+                }
+            """
+        let context = SwiftJS()
+        let result = context.evaluateScript(script)
+
+        XCTAssertEqual(result["original"].toString(), "Hello, Data URL!")
+        XCTAssertTrue(result["base64"].toString().count > 0)
+        XCTAssertTrue(result["dataURL"].toString().hasPrefix("data:text/plain;base64,"))
+        XCTAssertEqual(result["decoded"].toString(), "Hello, Data URL!")
+        XCTAssertTrue(result["roundTripSuccess"].boolValue ?? false)
+    }
 }

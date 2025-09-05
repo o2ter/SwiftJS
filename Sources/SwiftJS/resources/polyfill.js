@@ -748,6 +748,82 @@
     }
   };
 
+  // Base64 encoding/decoding functions for Data URLs and binary data
+  globalThis.btoa = function (str) {
+    if (typeof str !== 'string') {
+      throw new TypeError('Failed to execute \'btoa\': 1 argument required, but only 0 present.');
+    }
+
+    // Convert string to UTF-8 bytes first
+    const utf8Bytes = [];
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      if (code > 255) {
+        throw new Error('Failed to execute \'btoa\': The string to be encoded contains characters outside of the Latin1 range.');
+      }
+      utf8Bytes.push(code);
+    }
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+
+    for (let i = 0; i < utf8Bytes.length; i += 3) {
+      const a = utf8Bytes[i];
+      const b = i + 1 < utf8Bytes.length ? utf8Bytes[i + 1] : 0;
+      const c = i + 2 < utf8Bytes.length ? utf8Bytes[i + 2] : 0;
+
+      const bitmap = (a << 16) | (b << 8) | c;
+
+      result += chars.charAt((bitmap >> 18) & 63);
+      result += chars.charAt((bitmap >> 12) & 63);
+      result += i + 1 < utf8Bytes.length ? chars.charAt((bitmap >> 6) & 63) : '=';
+      result += i + 2 < utf8Bytes.length ? chars.charAt(bitmap & 63) : '=';
+    }
+
+    return result;
+  };
+
+  globalThis.atob = function (base64) {
+    if (typeof base64 !== 'string') {
+      throw new TypeError('Failed to execute \'atob\': 1 argument required, but only 0 present.');
+    }
+
+    // Remove whitespace and validate base64 characters
+    base64 = base64.replace(/\\s/g, '');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+      throw new Error('Failed to execute \'atob\': The string to be decoded is not correctly encoded.');
+    }
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+
+    // Remove padding for processing
+    const paddingCount = (base64.match(/=/g) || []).length;
+    base64 = base64.replace(/=/g, '');
+
+    for (let i = 0; i < base64.length; i += 4) {
+      const encoded1 = chars.indexOf(base64.charAt(i));
+      const encoded2 = chars.indexOf(base64.charAt(i + 1));
+      const encoded3 = chars.indexOf(base64.charAt(i + 2));
+      const encoded4 = chars.indexOf(base64.charAt(i + 3));
+
+      const bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
+
+      result += String.fromCharCode((bitmap >> 16) & 255);
+      if (encoded3 !== -1) result += String.fromCharCode((bitmap >> 8) & 255);
+      if (encoded4 !== -1) result += String.fromCharCode(bitmap & 255);
+    }
+
+    // Handle padding by removing extra characters
+    if (paddingCount === 1) {
+      result = result.slice(0, -1);
+    } else if (paddingCount === 2) {
+      result = result.slice(0, -2);
+    }
+
+    return result;
+  };
+
   // Enhanced Console implementation
   globalThis.console = globalThis.console || {};
 
