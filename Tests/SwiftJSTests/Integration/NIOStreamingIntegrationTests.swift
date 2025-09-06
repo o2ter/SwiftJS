@@ -149,7 +149,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         if success {
             // Test passed - validate success criteria
-            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let statusCode = result["statusCode"].numberValue ?? 0
             let hasData = result["hasData"].boolValue ?? false
 
             XCTAssertEqual(statusCode, 200, "Expected HTTP 200, got \(statusCode)")
@@ -273,7 +273,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         if success {
             // Test passed - validate success criteria
-            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let statusCode = result["statusCode"].numberValue ?? 0
             let hasData = result["hasData"].boolValue ?? false
 
             XCTAssertTrue(
@@ -354,8 +354,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         if success {
             // Test passed - validate success criteria
-            let progressCallCount = Int(result["progressCallCount"].numberValue ?? 0)
-            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let progressCallCount = result["progressCallCount"].numberValue ?? 0
+            let statusCode = result["statusCode"].numberValue ?? 0
 
             XCTAssertTrue(
                 progressCallCount > 0, "Expected progress calls, got \(progressCallCount)")
@@ -371,7 +371,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
             let error = result["error"].toString()
             let errorName = result["errorName"].toString()
             let errorStack = result["errorStack"].toString()
-            let progressCallCount = Int(result["progressCallCount"].numberValue ?? 0)
+            let progressCallCount = result["progressCallCount"].numberValue ?? 0
 
             XCTFail(
                 """
@@ -671,9 +671,9 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         if success {
             // Test passed - validate success criteria
-            let statusCode = Int(result["statusCode"].numberValue ?? 0)
-            let chunksReceived = Int(result["chunksReceived"].numberValue ?? 0)
-            let totalBytes = Int(result["totalBytes"].numberValue ?? 0)
+            let statusCode = result["statusCode"].numberValue ?? 0
+            let chunksReceived = result["chunksReceived"].numberValue ?? 0
+            let totalBytes = result["totalBytes"].numberValue ?? 0
             let recoveryAttempted = result["recoveryAttempted"].boolValue ?? false
             let hasCompleteResponse = result["hasCompleteResponse"].boolValue ?? false
 
@@ -704,8 +704,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
             let error = result["error"].toString()
             let errorName = result["errorName"].toString()
             let errorStack = result["errorStack"].toString()
-            let chunksReceived = Int(result["chunksReceived"].numberValue ?? 0)
-            let totalBytes = Int(result["totalBytes"].numberValue ?? 0)
+            let chunksReceived = result["chunksReceived"].numberValue ?? 0
+            let totalBytes = result["totalBytes"].numberValue ?? 0
             let recoveryAttempted = result["recoveryAttempted"].boolValue ?? false
 
             XCTFail(
@@ -804,12 +804,12 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         let result = try await promise.awaited(inContext: context)
 
         // Validate the results with comprehensive error handling
-        let totalStreams = Int(result["totalStreams"].numberValue ?? 0)
-        let successfulStreams = Int(result["successfulStreams"].numberValue ?? 0)
-        let failedStreams = Int(result["failedStreams"].numberValue ?? 0)
+        let totalStreams = result["totalStreams"].numberValue ?? 0
+        let successfulStreams = result["successfulStreams"].numberValue ?? 0
+        let failedStreams = result["failedStreams"].numberValue ?? 0
         let handledConcurrency = result["handledConcurrency"].boolValue ?? false
         let resourceExhaustionHandled = result["resourceExhaustionHandled"].boolValue ?? false
-        let duration = Int(result["duration"].numberValue ?? 0)
+        let duration = result["duration"].numberValue ?? 0
 
         // Check if this was an error case
         if result["success"].boolValue == false {
@@ -932,9 +932,9 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         if success {
             // Test passed - validate success criteria
-            let statusCode = Int(result["statusCode"].numberValue ?? 0)
-            let receivedChunks = Int(result["receivedChunks"].numberValue ?? 0)
-            let totalBytesReceived = Int(result["totalBytesReceived"].numberValue ?? 0)
+            let statusCode = result["statusCode"].numberValue ?? 0
+            let receivedChunks = result["receivedChunks"].numberValue ?? 0
+            let totalBytesReceived = result["totalBytesReceived"].numberValue ?? 0
             let integrityMaintained = result["integrityMaintained"].boolValue ?? false
             let hasResponseData = result["hasResponseData"].boolValue ?? false
 
@@ -955,8 +955,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
             let error = result["error"].toString()
             let errorName = result["errorName"].toString()
             let errorStack = result["errorStack"].toString()
-            let receivedChunks = Int(result["receivedChunks"].numberValue ?? 0)
-            let totalBytesReceived = Int(result["totalBytesReceived"].numberValue ?? 0)
+            let receivedChunks = result["receivedChunks"].numberValue ?? 0
+            let totalBytesReceived = result["totalBytesReceived"].numberValue ?? 0
 
             XCTFail(
                 """
@@ -1006,7 +1006,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                      "Concurrent stream creation failed: \(result["error"].toString())")
         
         if result["success"].boolValue == true {
-            XCTAssertEqual(Int(result["streamCount"].numberValue ?? 0), 5)
+            XCTAssertEqual(result["streamCount"].numberValue ?? 0, 5)
             XCTAssertTrue(result["allValidStreams"].boolValue ?? false)
         }
     }
