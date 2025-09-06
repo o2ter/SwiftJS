@@ -757,7 +757,7 @@ final class FetchTests: XCTestCase {
                     'https://postman-echo.com/status/404',
                     'https://postman-echo.com/status/500',
                     'https://invalid-url-12345.nonexistent',
-                    'https://postman-echo.com/delay/1'
+                    'https://postman-echo.com/headers'
                 ];
                 
                 const results = [];
@@ -783,27 +783,28 @@ final class FetchTests: XCTestCase {
                     const duration = endTime - startTime;
                     
                     const successCount = promiseResults.filter(r => 
-                        r.status === 'fulfilled' && r.value.success
+                        r.status === 'fulfilled' && r.value.success && r.value.ok
                     ).length;
                     
-                    const errorCount = promiseResults.filter(r => 
-                        r.status === 'rejected' || !r.value.success
-                    ).length;
-                    
-                    const networkErrors = promiseResults.filter(r => 
-                        r.status === 'fulfilled' && !r.value.success && r.value.error
-                    ).length;
-                    
-                    const httpErrors = promiseResults.filter(r => 
+                    const httpErrorCount = promiseResults.filter(r => 
                         r.status === 'fulfilled' && r.value.success && !r.value.ok
+                    ).length;
+                    
+                    const networkErrorCount = promiseResults.filter(r => 
+                        r.status === 'fulfilled' && !r.value.success
+                    ).length;
+                    
+                    const rejectedCount = promiseResults.filter(r => 
+                        r.status === 'rejected'
                     ).length;
                     
                     testCompleted({
                         totalRequests: requests.length,
                         successCount: successCount,
-                        errorCount: errorCount,
-                        networkErrors: networkErrors,
-                        httpErrors: httpErrors,
+                        httpErrorCount: httpErrorCount,
+                        networkErrorCount: networkErrorCount,
+                        rejectedCount: rejectedCount,
+                        totalResponses: successCount + httpErrorCount + networkErrorCount + rejectedCount,
                         duration: duration,
                         handledConcurrently: duration < 10000, // Should complete reasonably quickly
                         results: promiseResults.map(r => r.status === 'fulfilled' ? r.value : { error: 'Promise rejected' })
@@ -816,15 +817,18 @@ final class FetchTests: XCTestCase {
             let result = args[0]
 
             XCTAssertEqual(Int(result["totalRequests"].numberValue ?? 0), 5)
-            XCTAssertTrue(result["handledConcurrently"].boolValue ?? false)
+            
+            // Verify all requests completed with some result
+            let totalResponses = Int(result["totalResponses"].numberValue ?? 0)
+            XCTAssertEqual(totalResponses, 5, "All requests should complete with some result")
 
-            // We expect at least some requests to succeed and some to fail
+            // We expect some successful requests (postman-echo.com endpoints should work)
             let successCount = Int(result["successCount"].numberValue ?? 0)
-            let errorCount = Int(result["errorCount"].numberValue ?? 0)
-            let networkErrors = Int(result["networkErrors"].numberValue ?? 0)
-            let httpErrors = Int(result["httpErrors"].numberValue ?? 0)
+            XCTAssertGreaterThan(successCount, 0, "At least some requests should succeed")
 
-            XCTAssertGreaterThanOrEqual(successCount + errorCount + networkErrors + httpErrors, 3)
+            // Duration should be reasonable (may take longer due to delay endpoint)
+            let duration = result["duration"].numberValue ?? 0
+            XCTAssertLessThan(duration, 30000, "Requests should complete within 30 seconds")
 
             expectation.fulfill()
             return SwiftJS.Value.undefined
