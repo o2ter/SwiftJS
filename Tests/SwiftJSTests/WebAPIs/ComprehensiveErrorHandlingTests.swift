@@ -515,7 +515,6 @@ final class ComprehensiveErrorHandlingTests: XCTestCase {
             
             for i in 0..<testCount {
                 let test = errorTests[i]
-                let testName = test["test"].toString()
                 
                 // chdir should validate paths and throw errors for invalid ones
                 XCTAssertTrue(test["error"].boolValue ?? false, 
