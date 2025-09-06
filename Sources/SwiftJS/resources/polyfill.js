@@ -1521,18 +1521,30 @@
     }
 
     readAsArrayBuffer(blob) {
+      if (this.#readyState === FileReader.LOADING) {
+        throw new Error('InvalidStateError: FileReader is already reading');
+      }
       this.#startReading(blob, 'arraybuffer');
     }
 
     readAsBinaryString(blob) {
+      if (this.#readyState === FileReader.LOADING) {
+        throw new Error('InvalidStateError: FileReader is already reading');
+      }
       this.#startReading(blob, 'binarystring');
     }
 
     readAsDataURL(blob) {
+      if (this.#readyState === FileReader.LOADING) {
+        throw new Error('InvalidStateError: FileReader is already reading');
+      }
       this.#startReading(blob, 'dataurl');
     }
 
     readAsText(blob, encoding = 'utf-8') {
+      if (this.#readyState === FileReader.LOADING) {
+        throw new Error('InvalidStateError: FileReader is already reading');
+      }
       this.#startReading(blob, 'text', encoding);
     }
 
@@ -1553,6 +1565,7 @@
     }
 
     async #startReading(blobOrFile, format, encoding = 'utf-8') {
+      // State should already be checked by the caller, but double-check
       if (this.#readyState === FileReader.LOADING) {
         throw new Error('InvalidStateError: FileReader is already reading');
       }
