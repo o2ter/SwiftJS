@@ -1,6 +1,36 @@
 (function () {
   'use strict';
 
+  /*
+   * CRITICAL STREAMING ARCHITECTURE NOTES:
+   * 
+   * This polyfill implements proper streaming for Blob, File, and HTTP operations.
+   * Key principles that MUST be followed in future modifications:
+   * 
+   * 1. NEVER call blob.arrayBuffer() in streaming contexts
+   *    - Always use blob.stream() and process chunks individually
+   *    - Large files (GB+) will cause memory exhaustion otherwise
+   * 
+   * 2. File objects with filePath use Swift FileSystem streaming APIs
+   *    - createFileHandle() + readFileHandleChunk() for true disk streaming
+   *    - Never load entire file into memory before streaming
+   * 
+   * 3. HTTP uploads use streaming body, not buffered body
+   *    - Pass ReadableStream directly to URLRequest
+   *    - Avoid await body.arrayBuffer() for uploads
+   * 
+   * 4. TextDecoder streaming for text operations
+   *    - Use { stream: true } to handle encoding boundaries across chunks
+   *    - Accumulate text progressively, not all-at-once
+   * 
+   * 5. Response body streaming pipes blob.stream() directly
+   *    - No intermediate arrayBuffer() materialization
+   *    - Preserve memory-efficient chunk processing
+   * 
+   * FUTURE DEVELOPERS: If you find yourself calling .arrayBuffer() in streaming
+   * code, you're probably doing it wrong. Use .stream() and process chunks.
+   */
+
   // Private symbols for internal APIs
   const SYMBOLS = {
     formDataData: Symbol('FormData._data'),
@@ -1206,33 +1236,72 @@
     }
 
     stream() {
-      // Return a ReadableStream that streams the blob data in chunks
+      // Return a ReadableStream that properly streams the blob data
       const blob = this;
+      const chunkSize = 64 * 1024; // 64KB chunks
 
       return new ReadableStream({
         async start(controller) {
           try {
-            // For now, we'll read the entire blob and stream it in chunks
-            // This could be optimized to stream parts individually for very large blobs
-            const buffer = await blob.arrayBuffer();
-            const uint8Array = new Uint8Array(buffer);
-
-            // Stream in 64KB chunks for better performance
-            const chunkSize = 64 * 1024;
-            let offset = 0;
-
-            while (offset < uint8Array.length) {
-              const chunk = uint8Array.slice(offset, Math.min(offset + chunkSize, uint8Array.length));
-              controller.enqueue(chunk);
-              offset += chunkSize;
-            }
-
+            // Stream each part individually without loading everything into memory
+            await streamParts(blob[SYMBOLS.blobParts], controller, chunkSize);
             controller.close();
           } catch (error) {
             controller.error(error);
           }
         }
       });
+
+      // Helper function to stream blob parts
+      async function streamParts(parts, controller, chunkSize) {
+        const encoder = new TextEncoder();
+
+        for (const part of parts) {
+          // Handle async placeholders (from sliced blobs)
+          if (part?.__asyncBlob) {
+            const resolvedBlob = await part[SYMBOLS.blobPlaceholderPromise];
+            await streamParts(resolvedBlob[SYMBOLS.blobParts], controller, chunkSize);
+            continue;
+          }
+
+          if (typeof part === 'string') {
+            // Stream string data in chunks
+            const encoded = encoder.encode(part);
+            await streamBuffer(encoded, controller, chunkSize);
+          } else if (part instanceof ArrayBuffer) {
+            await streamBuffer(new Uint8Array(part), controller, chunkSize);
+          } else if (ArrayBuffer.isView(part)) {
+            await streamBuffer(new Uint8Array(part.buffer, part.byteOffset, part.byteLength), controller, chunkSize);
+          } else if (part instanceof Blob) {
+            // Recursively stream nested blob without loading into memory
+            const nestedStream = part.stream();
+            const reader = nestedStream.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } finally {
+              reader.releaseLock();
+            }
+          } else if (part != null) {
+            // Fallback to string conversion for unknown types
+            const encoded = encoder.encode(String(part));
+            await streamBuffer(encoded, controller, chunkSize);
+          }
+        }
+      }
+
+      // Helper function to stream buffer in chunks
+      async function streamBuffer(buffer, controller, chunkSize) {
+        for (let offset = 0; offset < buffer.length; offset += chunkSize) {
+          const chunk = buffer.slice(offset, Math.min(offset + chunkSize, buffer.length));
+          controller.enqueue(chunk);
+          // Yield control to allow other operations
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
     }
   };
 
@@ -1256,7 +1325,7 @@
     stream() {
       // If this File was created from a file system path, stream directly from disk using Swift
       const filePath = this.#filePath;
-      if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath)) {
+      if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath) && __APPLE_SPEC__.FileSystem.isFile(filePath)) {
         return new ReadableStream({
           start(controller) {
             // Create a file handle for efficient streaming through Swift
@@ -1273,7 +1342,7 @@
                 // Read chunk directly from Swift file handle
                 const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
 
-                if (!chunk) {
+                if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
                   // EOF reached
                   __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
                   controller.close();
@@ -1293,6 +1362,14 @@
             };
 
             readNextChunk();
+          },
+
+          cancel() {
+            // Clean up file handle if stream is cancelled
+            const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+            if (handle) {
+              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+            }
           }
         });
       }
@@ -1451,7 +1528,7 @@
         let result;
 
         if (useStreaming && (format === 'arraybuffer' || format === 'text')) {
-          // Use streaming for large files
+          // Use proper streaming that processes chunks as they arrive
           result = await this.#streamingRead(blob, format, encoding, (progressLoaded) => {
             loaded = progressLoaded;
             this.#fireEvent('progress', { loaded, total, lengthComputable: true });
@@ -1517,40 +1594,71 @@
     async #streamingRead(blob, format, encoding, onProgress) {
       const stream = blob.stream();
       const reader = stream.getReader();
-      const chunks = [];
       let totalLoaded = 0;
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          totalLoaded += value.byteLength;
-
-          if (onProgress) {
-            onProgress(totalLoaded);
-          }
-
-          // Check if aborted during streaming
-          if (this.#readyState !== FileReader.LOADING) {
-            return null;
-          }
-        }
-
-        // Combine chunks
-        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-        const combined = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          combined.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-
         if (format === 'arraybuffer') {
+          // For arraybuffer, we can progressively build the result
+          const chunks = [];
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            chunks.push(value);
+            totalLoaded += value.byteLength;
+
+            if (onProgress) {
+              onProgress(totalLoaded);
+            }
+
+            // Check if aborted during streaming
+            if (this.#readyState !== FileReader.LOADING) {
+              return null;
+            }
+          }
+
+          // Combine chunks efficiently
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of chunks) {
+            combined.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+
           return combined.buffer;
+
         } else if (format === 'text') {
-          return new TextDecoder(encoding).decode(combined);
+          // For text, we need to accumulate due to encoding boundaries
+          // Use streaming TextDecoder for better memory efficiency
+          const decoder = new TextDecoder(encoding, { stream: true });
+          let result = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              // Finalize decoding
+              result += decoder.decode();
+              break;
+            }
+
+            // Decode chunk with streaming enabled (handles partial characters)
+            result += decoder.decode(value, { stream: true });
+            totalLoaded += value.byteLength;
+
+            if (onProgress) {
+              onProgress(totalLoaded);
+            }
+
+            // Check if aborted during streaming
+            if (this.#readyState !== FileReader.LOADING) {
+              return null;
+            }
+          }
+
+          return result;
         }
 
         throw new Error(`Streaming not supported for format: ${format}`);
@@ -2162,8 +2270,18 @@
               const bytes = encoder.encode(body);
               controller.enqueue(bytes);
             } else if (body instanceof Blob) {
-              const buffer = await body.arrayBuffer();
-              controller.enqueue(new Uint8Array(buffer));
+              // Use proper streaming from blob without loading everything into memory
+              const blobStream = body.stream();
+              const reader = blobStream.getReader();
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  controller.enqueue(value);
+                }
+              } finally {
+                reader.releaseLock();
+              }
             } else if (body instanceof URLSearchParams) {
               const encoder = new TextEncoder();
               const bytes = encoder.encode(body.toString());
@@ -2449,9 +2567,8 @@
           );
         }
       } else if (request.body instanceof Blob) {
-        // Convert Blob to Uint8Array for sending
-        const buffer = await request.body.arrayBuffer();
-        urlRequest.httpBody = new Uint8Array(buffer);
+        // Use streaming upload for Blob bodies
+        bodyStream = request.body.stream();
         if (!request.headers.has('Content-Type') && request.body.type) {
           urlRequest.setValueForHTTPHeaderField(request.body.type, 'Content-Type');
         }
