@@ -3,14 +3,8 @@
 
   // Private symbols for internal APIs
   const SYMBOLS = {
-    formDataData: Symbol('FormData._data'),
     formDataToMultipart: Symbol('FormData._toMultipartString'),
-    formDataToURLEncoded: Symbol('FormData._toURLEncoded'),
-    blobParts: Symbol('Blob._parts'),
-    blobType: Symbol('Blob._type'),
     blobPlaceholderPromise: Symbol('Blob._placeholderPromise'),
-    headersMap: Symbol('Headers._headers'),
-    requestBodyText: Symbol('Request._bodyText'),
     requestOriginalBody: Symbol('Request._originalBody'),
     streamInternal: Symbol('Stream._internal'),
     abortSignalMarkAborted: Symbol('AbortSignal._markAborted'),
@@ -39,7 +33,7 @@
       if (directory == null) {
         throw new TypeError("process.chdir() path must be a string");
       }
-      
+
       const path = String(directory);
       const success = __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(path);
       if (!success) {
@@ -72,22 +66,22 @@
       // Check if the first valid segment is absolute
       let isAbsolute = false;
       let resultParts = [];
-      
+
       for (const segment of segments) {
         if (!segment || typeof segment !== 'string') continue;
-        
+
         // If this is the first segment and it starts with '/', it's absolute
         if (resultParts.length === 0 && segment.startsWith('/')) {
           isAbsolute = true;
         }
-        
+
         // Split segment and filter out empty parts
         const parts = segment.split(this.sep).filter(part => part !== '' && part !== '.');
         resultParts.push(...parts);
       }
-      
+
       const result = resultParts.join(this.sep);
-      
+
       if (isAbsolute) {
         return this.sep + result;
       }
@@ -683,7 +677,7 @@
           length += 2;
         } else if ((code & 0xFC00) === 0xD800 && i + 1 < string.length &&
           (string.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-        // Surrogate pair
+          // Surrogate pair
           i++;
           length += 4;
         } else {
@@ -826,13 +820,13 @@
 
     // Remove whitespace and validate base64 characters
     base64 = base64.replace(/\s/g, '');
-    
+
     // Handle missing padding by adding it
     const paddingNeeded = 4 - (base64.length % 4);
     if (paddingNeeded < 4) {
       base64 += '='.repeat(paddingNeeded);
     }
-    
+
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
       throw new Error('Failed to execute \'atob\': The string to be decoded is not correctly encoded.');
     }
@@ -859,12 +853,12 @@
 
       // Always decode the first byte
       result += String.fromCharCode((bitmap >> 16) & 255);
-      
+
       // Decode second byte unless we have double padding
       if (char3 !== '=') {
         result += String.fromCharCode((bitmap >> 8) & 255);
       }
-      
+
       // Decode third byte unless we have any padding
       if (char4 !== '=') {
         result += String.fromCharCode(bitmap & 255);
@@ -1135,12 +1129,12 @@
   globalThis.Blob = class Blob {
     #size = 0;
     #type = '';
+    #parts = [];
 
     constructor(parts = [], options = {}) {
-      this[SYMBOLS.blobParts] = Array.isArray(parts) ? parts.slice() : [parts];
+      this.#parts = Array.isArray(parts) ? parts.slice() : [parts];
       this.#type = String(options.type || '').toLowerCase();
       this.#calculateSize();
-      this[SYMBOLS.blobType] = this.#type;
       this[Symbol.toStringTag] = 'Blob';
     }
 
@@ -1149,7 +1143,7 @@
 
     #calculateSize() {
       const encoder = new TextEncoder();
-      for (const part of this[SYMBOLS.blobParts]) {
+      for (const part of this.#parts) {
         if (typeof part === 'string') {
           this.#size += encoder.encode(part).length;
         } else if (part instanceof ArrayBuffer) {
@@ -1184,7 +1178,7 @@
     }
 
     async arrayBuffer() {
-      let partsToProcess = this[SYMBOLS.blobParts];
+      let partsToProcess = this.#parts;
 
       // Handle async placeholders
       if (partsToProcess?.some(p => p?.__asyncBlob)) {
@@ -1249,7 +1243,7 @@
 
       // Return placeholder blob
       const placeholder = new Blob([], { type: contentType });
-      placeholder[SYMBOLS.blobParts] = [{
+      placeholder.#parts = [{
         __asyncBlob: true,
         [SYMBOLS.blobPlaceholderPromise]: slicePromise
       }];
@@ -1266,7 +1260,7 @@
         async start(controller) {
           try {
             // Stream each part individually without loading everything into memory
-            await streamParts(blob[SYMBOLS.blobParts], controller, chunkSize);
+            await streamParts(blob.#parts, controller, chunkSize);
             controller.close();
           } catch (error) {
             controller.error(error);
@@ -1282,7 +1276,7 @@
           // Handle async placeholders (from sliced blobs)
           if (part?.__asyncBlob) {
             const resolvedBlob = await part[SYMBOLS.blobPlaceholderPromise];
-            await streamParts(resolvedBlob[SYMBOLS.blobParts], controller, chunkSize);
+            await streamParts(resolvedBlob.#parts, controller, chunkSize);
             continue;
           }
 
@@ -1340,7 +1334,7 @@
       if (typeof name !== 'string') {
         throw new TypeError("Failed to construct 'File': parameter 2 is not of type 'string'.");
       }
-      
+
       super(parts, options);
       this.#name = String(name || '');
       this.#lastModified = options.lastModified || Date.now();
@@ -1471,7 +1465,7 @@
         lastModified: stats.mtime || Date.now(),
         [SYMBOLS.filePath]: path
       });
-      
+
       // Override the size property to reflect the actual file size
       Object.defineProperty(file, 'size', {
         value: stats.size || 0,
@@ -1479,7 +1473,7 @@
         enumerable: true,
         configurable: false
       });
-      
+
       return file;
     }
   };
@@ -1776,33 +1770,33 @@
 
         const chunkSize = 64 * 1024; // 64KB chunks
         let totalLoaded = 0;
-        
+
         if (format === 'arraybuffer') {
           const chunks = [];
-          
+
           while (true) {
             const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
             if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
               break; // EOF
             }
-            
+
             const bytes = new Uint8Array(chunk.typedArrayBytes);
             chunks.push(bytes);
             totalLoaded += bytes.byteLength;
-            
+
             if (onProgress) {
               onProgress(totalLoaded);
             }
-            
+
             // Check if aborted during streaming
             if (this.#readyState !== FileReader.LOADING) {
               __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
               return null;
             }
           }
-          
+
           __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-          
+
           // Combine chunks efficiently
           const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
           const combined = new Uint8Array(totalLength);
@@ -1811,13 +1805,13 @@
             combined.set(chunk, offset);
             offset += chunk.byteLength;
           }
-          
+
           return combined.buffer;
-          
+
         } else if (format === 'text') {
           const decoder = new TextDecoder(encoding, { stream: true });
           let result = '';
-          
+
           while (true) {
             const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
             if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
@@ -1825,28 +1819,28 @@
               result += decoder.decode();
               break; // EOF
             }
-            
+
             const bytes = new Uint8Array(chunk.typedArrayBytes);
             result += decoder.decode(bytes, { stream: true });
             totalLoaded += bytes.byteLength;
-            
+
             if (onProgress) {
               onProgress(totalLoaded);
             }
-            
+
             // Check if aborted during streaming
             if (this.#readyState !== FileReader.LOADING) {
               __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
               return null;
             }
           }
-          
+
           __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
           return result;
         }
-        
+
         throw new Error(`Path streaming not supported for format: ${format}`);
-        
+
       } catch (error) {
         throw error;
       }
@@ -1886,7 +1880,7 @@
       this.HEADERS_RECEIVED = XMLHttpRequest.HEADERS_RECEIVED;
       this.LOADING = XMLHttpRequest.LOADING;
       this.DONE = XMLHttpRequest.DONE;
-      
+
       // Public properties
       this.responseType = '';
       this.timeout = 0;
@@ -2198,9 +2192,9 @@
 
   // Headers - HTTP headers implementation
   globalThis.Headers = class Headers {
-    constructor(init) {
-      this[SYMBOLS.headersMap] = new Map();
+    #headers = new Map();
 
+    constructor(init) {
       if (init) {
         this.#initializeHeaders(init);
       }
@@ -2230,20 +2224,20 @@
 
     #initializeHeaders(init) {
       if (init instanceof Headers) {
-        for (const [key, value] of init[SYMBOLS.headersMap]) {
-          this[SYMBOLS.headersMap].set(key.toLowerCase(), value);
+        for (const [key, value] of init.#headers) {
+          this.#headers.set(key.toLowerCase(), value);
         }
       } else if (Array.isArray(init)) {
         for (const [key, value] of init) {
           this.#validateHeaderName(key);
           this.#validateHeaderValue(value);
-          this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
+          this.#headers.set(key.toLowerCase(), String(value));
         }
       } else if (typeof init === 'object') {
         for (const [key, value] of Object.entries(init)) {
           this.#validateHeaderName(key);
           this.#validateHeaderValue(value);
-          this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
+          this.#headers.set(key.toLowerCase(), String(value));
         }
       }
     }
@@ -2252,52 +2246,52 @@
       this.#validateHeaderName(name);
       this.#validateHeaderValue(value);
       const normalizedName = name.toLowerCase();
-      const existing = this[SYMBOLS.headersMap].get(normalizedName);
+      const existing = this.#headers.get(normalizedName);
       const newValue = existing ? `${existing}, ${value}` : String(value);
-      this[SYMBOLS.headersMap].set(normalizedName, newValue);
+      this.#headers.set(normalizedName, newValue);
     }
 
     delete(name) {
       this.#validateHeaderName(name);
-      this[SYMBOLS.headersMap].delete(name.toLowerCase());
+      this.#headers.delete(name.toLowerCase());
     }
 
     get(name) {
       this.#validateHeaderName(name);
-      return this[SYMBOLS.headersMap].get(name.toLowerCase()) || null;
+      return this.#headers.get(name.toLowerCase()) || null;
     }
 
     has(name) {
       this.#validateHeaderName(name);
-      return this[SYMBOLS.headersMap].has(name.toLowerCase());
+      return this.#headers.has(name.toLowerCase());
     }
 
     set(name, value) {
       this.#validateHeaderName(name);
       this.#validateHeaderValue(value);
-      this[SYMBOLS.headersMap].set(name.toLowerCase(), String(value));
+      this.#headers.set(name.toLowerCase(), String(value));
     }
 
     entries() {
-      return this[SYMBOLS.headersMap].entries();
+      return this.#headers.entries();
     }
 
     keys() {
-      return this[SYMBOLS.headersMap].keys();
+      return this.#headers.keys();
     }
 
     values() {
-      return this[SYMBOLS.headersMap].values();
+      return this.#headers.values();
     }
 
     forEach(callback, thisArg) {
-      for (const [key, value] of this[SYMBOLS.headersMap]) {
+      for (const [key, value] of this.#headers) {
         callback.call(thisArg, value, key, this);
       }
     }
 
     [Symbol.iterator]() {
-      return this[SYMBOLS.headersMap][Symbol.iterator]();
+      return this.#headers[Symbol.iterator]();
     }
   };
 
@@ -2316,13 +2310,12 @@
       if (arguments.length === 0) {
         throw new TypeError("Failed to construct 'Request': 1 argument required, but only 0 present.");
       }
-      
+
       if (input instanceof Request) {
         this.#copyFromRequest(input);
       } else {
         this.#initializeFromUrl(String(input), init);
       }
-      this[SYMBOLS.requestBodyText] = null;
     }
 
     #copyFromRequest(request) {
@@ -2337,7 +2330,7 @@
 
     #initializeFromUrl(url, init) {
       this.#url = url;
-      
+
       // Validate method
       const method = (init.method || 'GET').toUpperCase();
 
@@ -2352,12 +2345,12 @@
       if (!/^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/.test(method)) {
         throw new TypeError(`'${init.method}' is not a valid HTTP method.`);
       }
-      
+
       // Validate that GET/HEAD requests don't have body
       if ((method === 'GET' || method === 'HEAD') && init.body) {
         throw new TypeError(`Request with GET/HEAD method cannot have body.`);
       }
-      
+
       this.#method = method;
       this.#headers = new Headers(init.headers);
       this.#body = init.body || null;
@@ -2471,7 +2464,7 @@
       if (!Number.isInteger(status) || status < 100 || status > 599) {
         throw new RangeError(`Invalid status code: ${status}`);
       }
-      
+
       this.#originalBody = body || null;
       this.#status = status;
       this.#statusText = init.statusText !== undefined ? init.statusText : getStatusText(this.#status);
@@ -3025,7 +3018,7 @@
       if (arguments.length < 2) {
         throw new TypeError(`Failed to execute 'append' on 'URLSearchParams': 2 arguments required, but only ${arguments.length} present.`);
       }
-      
+
       const key = String(name);
       const val = String(value);
       this.#entries.push([key, val]);
@@ -3114,22 +3107,20 @@
 
   // FormData - form data representation
   globalThis.FormData = class FormData {
-    constructor(form) {
-      this[SYMBOLS.formDataData] = new Map();
-    }
+    #data = new Map();
 
     append(name, value, filename) {
       if (arguments.length < 2) {
         throw new TypeError(`Failed to execute 'append' on 'FormData': 2 arguments required, but only ${arguments.length} present.`);
       }
-      
+
       const key = String(name);
-      if (!this[SYMBOLS.formDataData].has(key)) {
-        this[SYMBOLS.formDataData].set(key, []);
+      if (!this.#data.has(key)) {
+        this.#data.set(key, []);
       }
 
       const item = this.#createFormDataItem(value, filename);
-      this[SYMBOLS.formDataData].get(key).push(item);
+      this.#data.get(key).push(item);
     }
 
     #createFormDataItem(value, filename) {
@@ -3156,36 +3147,36 @@
     }
 
     delete(name) {
-      this[SYMBOLS.formDataData].delete(String(name));
+      this.#data.delete(String(name));
     }
 
     get(name) {
-      const values = this[SYMBOLS.formDataData].get(String(name));
+      const values = this.#data.get(String(name));
       return values?.length > 0 ? values[0].value : null;
     }
 
     getAll(name) {
-      const values = this[SYMBOLS.formDataData].get(String(name));
+      const values = this.#data.get(String(name));
       return values ? values.map(item => item.value) : [];
     }
 
     has(name) {
-      return this[SYMBOLS.formDataData].has(String(name));
+      return this.#data.has(String(name));
     }
 
     set(name, value, filename) {
       if (arguments.length < 2) {
         throw new TypeError(`Failed to execute 'set' on 'FormData': 2 arguments required, but only ${arguments.length} present.`);
       }
-      
+
       const key = String(name);
-      this[SYMBOLS.formDataData].delete(key);
+      this.#data.delete(key);
       this.append(key, value, filename);
     }
 
     entries() {
       const entries = [];
-      for (const [key, values] of this[SYMBOLS.formDataData]) {
+      for (const [key, values] of this.#data) {
         for (const item of values) {
           const entry = item.type === 'file' || item.type === 'blob'
             ? [key, item.value, item.filename]
@@ -3198,7 +3189,7 @@
 
     keys() {
       const keys = [];
-      for (const [key, values] of this[SYMBOLS.formDataData]) {
+      for (const [key, values] of this.#data) {
         keys.push(...Array(values.length).fill(key));
       }
       return keys[Symbol.iterator]();
@@ -3206,7 +3197,7 @@
 
     values() {
       const values = [];
-      for (const [, items] of this[SYMBOLS.formDataData]) {
+      for (const [, items] of this.#data) {
         values.push(...items.map(item => item.value));
       }
       return values[Symbol.iterator]();
@@ -3222,22 +3213,11 @@
       return this.entries();
     }
 
-    [SYMBOLS.formDataToURLEncoded]() {
-      const params = [];
-      for (const [key, values] of this[SYMBOLS.formDataData]) {
-        for (const item of values) {
-          const paramValue = item.type === 'string' ? item.value : '[Object]';
-          params.push(`${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}`);
-        }
-      }
-      return params.join('&');
-    }
-
     [SYMBOLS.formDataToMultipart]() {
       const boundary = '----SwiftJSFormBoundary-' + crypto.randomUUID();
       let result = '';
 
-      for (const [key, values] of this[SYMBOLS.formDataData]) {
+      for (const [key, values] of this.#data) {
         for (const item of values) {
           result += `--${boundary}\r\n`;
 
@@ -3285,7 +3265,7 @@
       this.#internal.queueTotalSize += chunkSize;
 
       this.#internal.queue.push(chunk);
-      
+
       // Process pending read requests
       while (this.#internal.readRequests.length > 0 && this.#internal.queue.length > 0) {
         const { resolve } = this.#internal.readRequests.shift();
@@ -3299,7 +3279,7 @@
     close() {
       if (this.#internal.state !== 'readable') return;
       this.#internal.state = 'closed';
-      
+
       // Resolve all pending read requests with done: true
       while (this.#internal.readRequests.length > 0) {
         const { resolve } = this.#internal.readRequests.shift();
@@ -3316,7 +3296,7 @@
       if (this.#internal.state !== 'readable') return;
       this.#internal.state = 'errored';
       this.#internal.storedError = err;
-      
+
       // Reject all pending read requests
       while (this.#internal.readRequests.length > 0) {
         const { reject } = this.#internal.readRequests.shift();
@@ -3368,13 +3348,13 @@
       this[SYMBOLS.streamInternal].controller = controller;
 
       if (underlyingSource.start) {
-        try { 
-          const startResult = underlyingSource.start(controller); 
+        try {
+          const startResult = underlyingSource.start(controller);
           if (startResult && typeof startResult.then === 'function') {
             startResult.catch(e => controller.error(e));
           }
-        } catch (e) { 
-          controller.error(e); 
+        } catch (e) {
+          controller.error(e);
         }
       }
     }
@@ -3414,22 +3394,22 @@
             return Promise.reject(new TypeError('ReadableStream is in an invalid state'));
           }
           if (s.state === 'errored') return Promise.reject(s.storedError);
-          
+
           if (s.queue.length > 0) {
             const chunk = s.queue.shift();
             const chunkSize = s.sizeAlgorithm(chunk);
             s.queueTotalSize = Math.max(0, s.queueTotalSize - chunkSize);
-            
+
             // Check if we should pull more data (backpressure management)
             if (s.queueTotalSize < s.highWaterMark && !s.pulling) {
               this.#requestPull();
             }
-            
+
             return Promise.resolve({ value: chunk, done: false });
           }
-          
+
           if (s.state === 'closed') return Promise.resolve({ value: undefined, done: true });
-          
+
           const deferred = createDeferred();
           s.readRequests.push(deferred);
           this.#requestPull();
@@ -3484,7 +3464,7 @@
           if (!s) return Promise.reject(new TypeError('ReadableStream is in an invalid state'));
           if (s.state === 'closed') return Promise.resolve();
           if (s.state === 'errored') return Promise.reject(s.storedError);
-          
+
           if (!s.closePromise) {
             s.closePromise = createDeferred();
           }
@@ -3511,17 +3491,17 @@
       // Reject all pending read requests
       s.readRequests.forEach(r => r.reject(reason));
       s.readRequests = [];
-      
+
       // Mark as closed
       s.state = 'closed';
-      
+
       // Call underlying source cancel if available
       if (s.underlyingSource && s.underlyingSource.cancel) {
-        try { 
+        try {
           const cancelResult = s.underlyingSource.cancel(reason);
           return Promise.resolve(cancelResult);
-        } catch (e) { 
-          return Promise.reject(e); 
+        } catch (e) {
+          return Promise.reject(e);
         }
       }
       return Promise.resolve();
@@ -3540,7 +3520,7 @@
       }
 
       const reader = this.getReader();
-      
+
       const teeState = {
         reading: false,
         canceled1: false,
@@ -3729,7 +3709,7 @@
       if (this.#internal.state === 'errored') return;
       this.#internal.state = 'errored';
       this.#internal.storedError = err;
-      
+
       // Reject all pending writes
       this.#internal.writeQueue.forEach(item => item.reject(err));
       this.#internal.writeQueue = [];
@@ -4041,10 +4021,10 @@
           return new Promise((resolve, reject) => {
             try {
               const readableController = ts[SYMBOLS.streamInternal].readableController;
-              
+
               if (transformer.transform) {
                 const transformResult = transformer.transform(chunk, readableController);
-                
+
                 if (transformResult && typeof transformResult.then === 'function') {
                   transformResult.then(() => resolve()).catch(e => {
                     readableController.error(e);
@@ -4068,10 +4048,10 @@
           return new Promise((resolve, reject) => {
             try {
               const readableController = ts[SYMBOLS.streamInternal].readableController;
-              
+
               if (transformer.flush) {
                 const flushResult = transformer.flush(readableController);
-                
+
                 if (flushResult && typeof flushResult.then === 'function') {
                   flushResult.then(() => {
                     readableController.close();
@@ -4097,7 +4077,7 @@
         abort(reason) {
           const readableController = ts[SYMBOLS.streamInternal].readableController;
           readableController.error(reason);
-          
+
           if (transformer.cancel) {
             return transformer.cancel(reason);
           }
@@ -4193,7 +4173,7 @@
         if (chunk instanceof Uint8Array && request.view instanceof Uint8Array) {
           const bytesToCopy = Math.min(chunk.length, request.view.length);
           request.view.set(chunk.subarray(0, bytesToCopy));
-          
+
           if (chunk.length > bytesToCopy) {
             // Put remaining bytes back in queue
             s.queue.unshift(chunk.subarray(bytesToCopy));
