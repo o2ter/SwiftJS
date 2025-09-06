@@ -748,86 +748,85 @@ extension SwiftJS.Value {
     /// Usage:
     /// ```swift
     /// let promise = context.evaluateScript("fetch('https://example.com')")
-    /// let result = try await promise.awaited()
+    /// let result = try await promise.awaited(inContext: context)
     /// ```
     ///
     /// - Returns: The resolved value of the promise
     /// - Throws: An error if the promise is rejected or if this value is not a promise
-    public func awaited() async throws -> SwiftJS.Value {
+    public func awaited(inContext context: SwiftJS) async throws -> SwiftJS.Value {
         guard case let .value(jsValue) = self.base else {
             throw SwiftJS.Value(
-                newErrorFromMessage: "Value is not a JavaScript object", in: SwiftJS())
-        }
-
-        guard let context = jsValue.context else {
-            throw SwiftJS.Value(
-                newErrorFromMessage: "JavaScript value has no context", in: SwiftJS())
+                newErrorFromMessage: "Value is not a JavaScript object", in: context)
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            let thenMethod = jsValue.forProperty("then")
-            let catchMethod = jsValue.forProperty("catch")
 
-            // Check if this is actually a promise (has then method)
-            guard let thenMethod = thenMethod, thenMethod.isObject else {
-                continuation.resume(
-                    throwing: NSError(
-                        domain: "SwiftJSError",
-                        code: 1,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Value is not a Promise (missing 'then' method)"
-                        ]
-                    ))
-                return
-            }
+            context.runloop.perform {
+            
+                let thenMethod = jsValue.forProperty("then")
+                let catchMethod = jsValue.forProperty("catch")
 
-            guard let catchMethod = catchMethod else {
-                continuation.resume(
-                    throwing: NSError(
-                        domain: "SwiftJSError",
-                        code: 1,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Value is not a Promise (missing 'catch' method)"
-                        ]
-                    ))
-                return
-            }
-
-            // Handle promise resolution
-            let resolveCallback = JSValue(newFunctionIn: context) { args, _ in
-                if let result = args.first {
-                    continuation.resume(returning: SwiftJS.Value(result))
-                } else {
-                    continuation.resume(returning: .undefined)
+                // Check if this is actually a promise (has then method)
+                guard let thenMethod = thenMethod, thenMethod.isObject else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "SwiftJSError",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey:
+                                    "Value is not a Promise (missing 'then' method)"
+                            ]
+                        ))
+                    return
                 }
-                return JSValue(undefinedIn: context)
+
+                guard let catchMethod = catchMethod else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "SwiftJSError",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey:
+                                    "Value is not a Promise (missing 'catch' method)"
+                            ]
+                        ))
+                    return
+                }
+
+                // Handle promise resolution
+                let resolveCallback = JSValue(newFunctionIn: context.base) { args, _ in
+                    if let result = args.first {
+                        continuation.resume(returning: SwiftJS.Value(result))
+                    } else {
+                        continuation.resume(returning: .undefined)
+                    }
+                    return JSValue(undefinedIn: context.base)
+                }
+
+                // Handle promise rejection
+                let rejectCallback = JSValue(newFunctionIn: context.base) { args, _ in
+                    let errorMessage = args.first?.toString() ?? "Unknown promise rejection"
+                    let errorName = args.first?.forProperty("name").toString() ?? "Error"
+                    let errorStack =
+                        args.first?.forProperty("stack").toString() ?? "No stack trace available"
+
+                    let error = NSError(
+                        domain: "SwiftJSPromiseError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: errorMessage,
+                            "errorName": errorName,
+                            "errorStack": errorStack,
+                        ]
+                    )
+                    continuation.resume(throwing: error)
+                    return JSValue(undefinedIn: context.base)
+                }
+
+                // Attach then and catch handlers
+                thenMethod.call(withArguments: [resolveCallback])
+                catchMethod.call(withArguments: [rejectCallback])
             }
-
-            // Handle promise rejection
-            let rejectCallback = JSValue(newFunctionIn: context) { args, _ in
-                let errorMessage = args.first?.toString() ?? "Unknown promise rejection"
-                let errorName = args.first?.forProperty("name").toString() ?? "Error"
-                let errorStack =
-                    args.first?.forProperty("stack").toString() ?? "No stack trace available"
-
-                let error = NSError(
-                    domain: "SwiftJSPromiseError",
-                    code: 2,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: errorMessage,
-                        "errorName": errorName,
-                        "errorStack": errorStack,
-                    ]
-                )
-                continuation.resume(throwing: error)
-                return JSValue(undefinedIn: context)
-            }
-
-            // Attach then and catch handlers
-            thenMethod.call(withArguments: [resolveCallback])
-            catchMethod.call(withArguments: [rejectCallback])
         }
     }
 }
