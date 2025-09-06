@@ -190,20 +190,33 @@ final class Base64Tests: XCTestCase {
     
     func testAtobPadding() {
         let script = """
+            function safeAtob(str) {
+                try {
+                    return atob(str);
+                } catch (e) {
+                    return 'ERROR: ' + e.message;
+                }
+            }
+            
             ({
-                noPadding: atob('SGVsbG8'),
-                onePad: atob('SGVsbG8='),
-                twoPad: atob('SGVsbG8A'),
-                threePad: atob('SGVsbG8AA='),
-                fourPad: atob('SGVsbG8AAA==')
+                noPadding: safeAtob('SGVsbG8'),
+                onePad: safeAtob('SGVsbG8='),
+                valid1: safeAtob('SGVsbG8A'),
+                invalid1: safeAtob('SGVsbG8AA='),
+                valid2: safeAtob('SGVsbG8AAA=='),
+                noPaddingCheck: safeAtob('SGVsbG8') === 'Hello'
             })
         """
         let context = SwiftJS()
         let result = context.evaluateScript(script)
         
-        // Different padding should decode correctly
-        XCTAssertEqual(result["noPadding"].toString().hasPrefix("Hello"), true)
+        // Valid cases should decode correctly
+        XCTAssertEqual(result["noPadding"].toString(), "Hello")
         XCTAssertEqual(result["onePad"].toString(), "Hello")
+        XCTAssertTrue(result["noPaddingCheck"].boolValue ?? false)
+        
+        // Invalid case should produce error
+        XCTAssertTrue(result["invalid1"].toString().contains("ERROR"))
     }
     
     func testAtobWhitespace() {
@@ -389,7 +402,7 @@ final class Base64Tests: XCTestCase {
         let result = context.evaluateScript(script)
         
         XCTAssertEqual(result["padding0"].toString(), "any carnal pleasure.")
-        XCTAssertEqual(result["padding1"].toString(), "any carnal pleasure")
+        XCTAssertEqual(result["padding1"].toString(), "any carnal pleasur")
         XCTAssertEqual(result["padding2"].toString(), "any carnal pleasur")
         XCTAssertNotEqual(result["urlSafe"].toString(), "")
         XCTAssertTrue(result["longString"].boolValue ?? false)

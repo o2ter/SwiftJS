@@ -56,24 +56,30 @@
     static join(...segments) {
       if (segments.length === 0) return '.';
 
-      // Filter out empty segments and join with separator
-      const parts = segments
-        .filter(segment => segment && typeof segment === 'string')
-        .join(this.sep)
-        .split(this.sep)
-        .filter(part => part !== '');
-
-      // Handle absolute paths
-      const isAbsolute = segments[0] && segments[0].startsWith('/');
-      const result = parts.join(this.sep);
-
+      // Check if the first valid segment is absolute
+      let isAbsolute = false;
+      let resultParts = [];
+      
+      for (const segment of segments) {
+        if (!segment || typeof segment !== 'string') continue;
+        
+        // If this is the first segment and it starts with '/', it's absolute
+        if (resultParts.length === 0 && segment.startsWith('/')) {
+          isAbsolute = true;
+        }
+        
+        // Split segment and filter out empty parts
+        const parts = segment.split(this.sep).filter(part => part !== '' && part !== '.');
+        resultParts.push(...parts);
+      }
+      
+      const result = resultParts.join(this.sep);
+      
       if (isAbsolute) {
-        return '/' + result;
+        return this.sep + result;
       }
       return result || '.';
-    }
-
-    static resolve(...segments) {
+    }    static resolve(...segments) {
       let resolvedPath = '';
       let resolvedAbsolute = false;
 
@@ -86,7 +92,7 @@
       }
 
       if (!resolvedAbsolute) {
-        resolvedPath = __APPLE_SPEC__.FileSystem.currentDirectoryPath + '/' + resolvedPath;
+        resolvedPath = __APPLE_SPEC__.FileSystem.currentDirectoryPath() + '/' + resolvedPath;
       }
 
       // Normalize the path
@@ -2775,13 +2781,13 @@
 
   // URLSearchParams - URL search parameters manipulation
   globalThis.URLSearchParams = class URLSearchParams {
-    #params = new Map();
+    #entries = []; // Store as ordered list of [key, value] pairs
 
     constructor(init) {
       if (typeof init === 'string') {
         this.#parseString(init);
       } else if (init instanceof URLSearchParams) {
-        this.#params = new Map(init.#params);
+        this.#entries = [...init.#entries];
       } else if (Array.isArray(init)) {
         for (const [key, value] of init) {
           this.append(String(key), String(value));
@@ -2811,72 +2817,73 @@
     append(name, value) {
       const key = String(name);
       const val = String(value);
-      if (!this.#params.has(key)) {
-        this.#params.set(key, []);
-      }
-      this.#params.get(key).push(val);
+      this.#entries.push([key, val]);
     }
 
     delete(name) {
-      this.#params.delete(String(name));
+      const key = String(name);
+      this.#entries = this.#entries.filter(([k, v]) => k !== key);
     }
 
     get(name) {
-      const values = this.#params.get(String(name));
-      return values && values.length > 0 ? values[0] : null;
+      const key = String(name);
+      const entry = this.#entries.find(([k, v]) => k === key);
+      return entry ? entry[1] : null;
     }
 
     getAll(name) {
-      return this.#params.get(String(name)) || [];
+      const key = String(name);
+      return this.#entries.filter(([k, v]) => k === key).map(([k, v]) => v);
     }
 
     has(name) {
-      return this.#params.has(String(name));
+      const key = String(name);
+      return this.#entries.some(([k, v]) => k === key);
     }
 
     set(name, value) {
-      this.#params.set(String(name), [String(value)]);
+      const key = String(name);
+      const val = String(value);
+      // Remove all existing entries with this key
+      this.#entries = this.#entries.filter(([k, v]) => k !== key);
+      // Add the new entry
+      this.#entries.push([key, val]);
     }
 
     sort() {
-      const sorted = new Map([...this.#params.entries()].sort());
-      this.#params = sorted;
+      this.#entries.sort((a, b) => a[0].localeCompare(b[0]));
     }
 
     toString() {
       const parts = [];
-      for (const [key, values] of this.#params) {
-        for (const value of values) {
-          const encodedKey = encodeURIComponent(key).replace(/%20/g, '+');
-          const encodedValue = encodeURIComponent(value).replace(/%20/g, '+');
-          parts.push(`${encodedKey}=${encodedValue}`);
-        }
+      for (const [key, value] of this.#entries) {
+        const encodedKey = encodeURIComponent(key).replace(/%20/g, '+');
+        const encodedValue = encodeURIComponent(value).replace(/%20/g, '+');
+        parts.push(`${encodedKey}=${encodedValue}`);
       }
       return parts.join('&');
     }
 
     *entries() {
-      for (const [key, values] of this.#params) {
-        for (const value of values) {
-          yield [key, value];
-        }
+      for (const entry of this.#entries) {
+        yield entry;
       }
     }
 
     *keys() {
-      for (const [key] of this.entries()) {
+      for (const [key] of this.#entries) {
         yield key;
       }
     }
 
     *values() {
-      for (const [, value] of this.entries()) {
+      for (const [, value] of this.#entries) {
         yield value;
       }
     }
 
     forEach(callback, thisArg) {
-      for (const [key, value] of this.entries()) {
+      for (const [key, value] of this.#entries) {
         callback.call(thisArg, value, key, this);
       }
     }
