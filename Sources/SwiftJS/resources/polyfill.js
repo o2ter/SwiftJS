@@ -14,6 +14,7 @@
     requestOriginalBody: Symbol('Request._originalBody'),
     streamInternal: Symbol('Stream._internal'),
     abortSignalMarkAborted: Symbol('AbortSignal._markAborted'),
+    abortSignalTimeoutMs: Symbol('AbortSignal._timeoutMs'),
     filePath: Symbol('File._filePath'),
     eventTargetOriginalListener: Symbol('EventTarget._originalListener')
   };
@@ -601,6 +602,17 @@
 
     [SYMBOLS.abortSignalMarkAborted]() {
       this.#aborted = true;
+    }
+
+    // Static factory method for timeout-based AbortSignal
+    static timeout(milliseconds) {
+      const controller = new AbortController();
+      // Set timeout hint on the signal using symbol
+      controller.signal[SYMBOLS.abortSignalTimeoutMs] = milliseconds;
+      setTimeout(() => {
+        controller.abort();
+      }, milliseconds);
+      return controller.signal;
     }
   };
 
@@ -1853,6 +1865,11 @@
 
       const session = __APPLE_SPEC__.URLSession.shared();
 
+      // Set timeout on the URLRequest if specified
+      if (this.timeout > 0) {
+        this.#request.timeoutInterval = this.timeout / 1000; // Convert ms to seconds
+      }
+
       // Implement progressive loading with onprogress events
       let accumulatedData = new Uint8Array(0);
       let timeoutId = null;
@@ -2640,6 +2657,15 @@
 
     const urlRequest = new __APPLE_SPEC__.URLRequest(request.url);
     urlRequest.httpMethod = request.method;
+
+    // Set timeout based on AbortSignal.timeout() or default
+    if (request.signal && request.signal[SYMBOLS.abortSignalTimeoutMs]) {
+      // Use timeout from AbortSignal.timeout()
+      urlRequest.timeoutInterval = request.signal[SYMBOLS.abortSignalTimeoutMs] / 1000;
+    } else {
+      // Set default timeout (30 seconds)
+      urlRequest.timeoutInterval = 30.0;
+    }
 
     // Set headers
     for (const [key, value] of request.headers) {
