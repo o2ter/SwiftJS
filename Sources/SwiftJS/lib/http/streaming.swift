@@ -127,9 +127,20 @@ final class NIOHTTPClient: @unchecked Sendable {
         }
         
         // Handle request body
-        if let bodyData = request.httpBody?.typedArrayBytes {
-            let data = Data(bodyData.bindMemory(to: UInt8.self))
-            httpRequest.body = .bytes(data)
+        // First check the underlying URLRequest directly (most reliable)
+        let underlyingRequest = request.urlRequest
+        if let httpBodyData = underlyingRequest.httpBody {
+            httpRequest.body = .bytes(httpBodyData)
+        } else if let httpBody = request.httpBody {
+            // Fallback to JSValue property if underlying request has no body
+            if httpBody.isTypedArray {
+                let bodyData = httpBody.typedArrayBytes
+                let data = Data(bodyData.bindMemory(to: UInt8.self))
+                httpRequest.body = .bytes(data)
+            } else if httpBody.isString {
+                let data = httpBody.toString().data(using: .utf8) ?? Data()
+                httpRequest.body = .bytes(data)
+            }
         }
         
         // Execute request and stream response

@@ -11,6 +11,7 @@
     blobPlaceholderPromise: Symbol('Blob._placeholderPromise'),
     headersMap: Symbol('Headers._headers'),
     requestBodyText: Symbol('Request._bodyText'),
+    requestOriginalBody: Symbol('Request._originalBody'),
     streamInternal: Symbol('Stream._internal'),
     abortSignalMarkAborted: Symbol('AbortSignal._markAborted'),
     filePath: Symbol('File._filePath')
@@ -2222,6 +2223,7 @@
       this.#body = request.body;
       this.#signal = request.signal;
       this.#redirect = request.redirect;
+      this[SYMBOLS.requestOriginalBody] = request[SYMBOLS.requestOriginalBody]; // Copy the original body
     }
 
     #initializeFromUrl(url, init) {
@@ -2229,6 +2231,7 @@
       this.#method = (init.method || 'GET').toUpperCase();
       this.#headers = new Headers(init.headers);
       this.#body = init.body || null;
+      this[SYMBOLS.requestOriginalBody] = init.body || null; // Store original body
       this.#signal = init.signal || null;
       this.#redirect = init.redirect || 'follow';
 
@@ -2656,6 +2659,14 @@
           `multipart/form-data; boundary=${multipart.boundary}`,
           'Content-Type'
         );
+      } else if (request[SYMBOLS.requestOriginalBody] instanceof URLSearchParams) {
+        urlRequest.httpBody = request[SYMBOLS.requestOriginalBody].toString();
+        if (!request.headers.has('Content-Type')) {
+          urlRequest.setValueForHTTPHeaderField(
+            'application/x-www-form-urlencoded',
+            'Content-Type'
+          );
+        }
       } else if (request.body instanceof URLSearchParams) {
         urlRequest.httpBody = request.body.toString();
         if (!request.headers.has('Content-Type')) {

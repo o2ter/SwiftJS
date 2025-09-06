@@ -124,6 +124,22 @@ swift test
 
 ## Project Conventions
 
+### Code Style and Naming
+- **No underscore prefixes**: Never use underscore prefixes (like `_originalBody`) for internal fields or methods
+- **Use symbols for internal APIs**: For polyfill internal fields that need cross-class access, use symbols defined in the `SYMBOLS` object
+- **Use `#` for class private fields**: For true private fields within a single class, use JavaScript private field syntax with `#`
+- **Example pattern**:
+  ```javascript
+  // ❌ WRONG - underscore prefix
+  get _originalBody() { return this.#originalBody; }
+  
+  // ✅ CORRECT - use symbol for cross-class access
+  this[SYMBOLS.requestOriginalBody] = init.body;
+  
+  // ✅ CORRECT - use # for true private fields
+  #body = null;
+  ```
+
 ### Web Standards Compliance
 - When implementing APIs, prioritize web standards and specifications (W3C, WHATWG, ECMAScript) over Node.js-specific behaviors
 - Follow MDN Web Docs for API signatures, behavior, and error handling patterns
