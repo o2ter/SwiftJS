@@ -146,11 +146,11 @@ func main() {
     Thread.sleep(forTimeInterval: 0.05)
 
     while !shouldExit {
-        // Check if we have active timers
-        let hasTimers = context.hasActiveTimers
+        // Check if we have active timers or network requests
+        let hasActiveOps = context.hasActiveOperations
         
-        if hasTimers {
-            idleCycles = 0  // Reset idle counter when we have active timers
+        if hasActiveOps {
+            idleCycles = 0  // Reset idle counter when we have active operations
         } else {
             idleCycles += 1
         }        // Run the loop for a short period to handle any pending operations

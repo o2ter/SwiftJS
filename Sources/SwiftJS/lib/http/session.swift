@@ -27,8 +27,8 @@ import JavaScriptCore
 import NIOHTTP1
 
 @objc protocol JSURLSessionExport: JSExport {
-
-    static var shared: JSURLSession { get }
+    
+    func shared() -> JSURLSession
     
     func httpRequestWithRequest(
         _ request: JSURLRequest,
@@ -40,7 +40,17 @@ import NIOHTTP1
 
 @objc final class JSURLSession: NSObject, JSURLSessionExport, @unchecked Sendable {
     
-    static let shared: JSURLSession = JSURLSession()
+    // Store reference to SwiftJS context for network tracking
+    private let swiftJSContext: SwiftJS.Context
+
+    init(context: SwiftJS.Context) {
+        self.swiftJSContext = context
+        super.init()
+    }
+
+    func shared() -> JSURLSession {
+        return self
+    }
 
     /// Unified HTTP request method using JSURLRequest
     func httpRequestWithRequest(
@@ -53,6 +63,14 @@ import NIOHTTP1
 
         return JSValue(newPromiseIn: context) { resolve, reject in
             Task {
+                // Start network request tracking
+                let networkId = self.swiftJSContext.startNetworkRequest()
+
+                defer {
+                    // End network request tracking
+                    self.swiftJSContext.endNetworkRequest(networkId)
+                }
+
                 do {
                     var accumulatedData = Data()
 

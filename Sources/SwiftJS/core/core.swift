@@ -60,6 +60,21 @@ extension SwiftJS {
     public var activeTimerCount: Int {
         return self.context.activeTimerCount
     }
+    
+    /// Check if there are any active network requests
+    public var hasActiveNetworkRequests: Bool {
+        return self.context.hasActiveNetworkRequests
+    }
+
+    /// Get the count of active network requests
+    public var activeNetworkRequestCount: Int {
+        return self.context.activeNetworkRequestCount
+    }
+
+    /// Check if there are any active async operations (timers or network)
+    public var hasActiveOperations: Bool {
+        return hasActiveTimers || hasActiveNetworkRequests
+    }
 }
 
 extension SwiftJS {

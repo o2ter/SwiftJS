@@ -32,6 +32,10 @@ extension SwiftJS {
         var timerId: Int = 0
         var timer: [Int: Timer] = [:]
         
+        var networkRequestId: Int = 0
+        var networkRequests: Set<Int> = []
+        private let networkLock = NSLock()
+
         var logger: @Sendable (LogLevel, [SwiftJS.Value]) -> Void
         
         init() {
@@ -41,7 +45,6 @@ extension SwiftJS {
                 )
             }
         }
-        
         /// Check if there are any active timers
         var hasActiveTimers: Bool {
             return !timer.isEmpty
@@ -50,6 +53,37 @@ extension SwiftJS {
         /// Get count of active timers
         var activeTimerCount: Int {
             return timer.count
+        }
+        
+        /// Check if there are any active network requests
+        var hasActiveNetworkRequests: Bool {
+            networkLock.lock()
+            defer { networkLock.unlock() }
+            return !networkRequests.isEmpty
+        }
+
+        /// Get count of active network requests
+        var activeNetworkRequestCount: Int {
+            networkLock.lock()
+            defer { networkLock.unlock() }
+            return networkRequests.count
+        }
+
+        /// Start tracking a network request
+        func startNetworkRequest() -> Int {
+            networkLock.lock()
+            defer { networkLock.unlock() }
+            let id = networkRequestId
+            networkRequests.insert(id)
+            networkRequestId += 1
+            return id
+        }
+
+        /// Stop tracking a network request
+        func endNetworkRequest(_ id: Int) {
+            networkLock.lock()
+            defer { networkLock.unlock() }
+            networkRequests.remove(id)
         }
 
         deinit {
@@ -109,6 +143,16 @@ extension SwiftJS {
         timer?.invalidate()
     }
     
+    /// Start tracking a network request and return its ID
+    public func startNetworkRequest() -> Int {
+        return self.context.startNetworkRequest()
+    }
+
+    /// Stop tracking a network request by ID
+    public func endNetworkRequest(_ id: Int) {
+        self.context.endNetworkRequest(id)
+    }
+
 }
 
 extension SwiftJS {
@@ -321,10 +365,11 @@ extension SwiftJS {
             "deviceInfo": .init(JSDeviceInfo(), in: self),
             "bundleInfo": .init(JSBundleInfo.main, in: self),
             "FileSystem": .init(JSFileSystem.self, in: self),
-            "URLSession": .init(JSURLSession.self, in: self),
+            "URLSession": .init(JSURLSession(context: self.context), in: self),
             "URLRequest": .init(JSURLRequest.self, in: self),
             "URLResponse": .init(JSURLResponse.self, in: self)
         ]
+
         if let polyfillJs = String(data: Data(PackageResources.polyfill_js), encoding: .utf8) {
             self.evaluateScript(polyfillJs)
         }
