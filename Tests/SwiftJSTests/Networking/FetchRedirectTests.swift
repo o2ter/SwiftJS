@@ -259,10 +259,10 @@ final class FetchRedirectTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Redirect chain test")
         
         let script = """
-            // Test following a chain of redirects using a more reliable endpoint
+            // Test following a chain of redirects
             const startTime = Date.now();
             
-            fetch('https://postman-echo.com/get', {
+            fetch('https://postman-echo.com/redirect/3', {
                 redirect: 'follow'
             })
             .then(response => {
@@ -307,7 +307,7 @@ final class FetchRedirectTests: XCTestCase {
             // Test redirect behavior with POST request
             const testData = { test: 'redirect-post-data' };
             
-            fetch('https://postman-echo.com/post', {
+            fetch('https://postman-echo.com/redirect-to?url=https://postman-echo.com/get', {
                 method: 'POST',
                 body: JSON.stringify(testData),
                 headers: { 'Content-Type': 'application/json' },
@@ -319,7 +319,7 @@ final class FetchRedirectTests: XCTestCase {
                     finalStatus: response.status,
                     finalUrl: response.url,
                     redirected: response.redirected,
-                    methodPreserved: true  // Accept any response since we're just testing the API
+                    methodPreserved: response.url.includes('/get')
                 });
             })
             .catch(error => {
@@ -351,7 +351,7 @@ final class FetchRedirectTests: XCTestCase {
         
         let script = """
             // Test that redirect option works when passed via Request object
-            const request = new Request('https://postman-echo.com/get', {
+            const request = new Request('https://postman-echo.com/redirect-to?url=https://postman-echo.com/get', {
                 redirect: 'follow',
                 headers: { 'X-Test': 'redirect-test' }
             });
@@ -363,7 +363,7 @@ final class FetchRedirectTests: XCTestCase {
                     requestRedirect: request.redirect,
                     responseStatus: response.status,
                     responseUrl: response.url,
-                    redirectWorked: response.status === 200
+                    redirectWorked: response.status === 200 && response.url.includes('/get')
                 });
             })
             .catch(error => {
@@ -446,21 +446,21 @@ final class FetchRedirectTests: XCTestCase {
         
         let script = """
             // Test that certain headers are preserved across redirects
-            fetch('https://postman-echo.com/get', {
+            fetch('https://postman-echo.com/redirect-to?url=https://postman-echo.com/headers', {
                 redirect: 'follow',
                 headers: {
                     'X-Custom-Header': 'should-be-preserved',
                     'User-Agent': 'SwiftJS-Test'
                 }
             })
-            .then(response => {
-                // Since we can't easily inspect the sent headers,
-                // we'll just verify the request completed successfully
+            .then(response => response.json())
+            .then(data => {
+                const headers = data.headers || {};
                 testCompleted({
                     success: true,
-                    responseStatus: response.status,
-                    headersSent: true,  // We assume headers were sent properly
-                    headerCount: 2  // We sent 2 custom headers
+                    receivedHeaders: headers,
+                    hasCustomHeader: !!(headers['x-custom-header'] || headers['X-Custom-Header']),
+                    headerCount: Object.keys(headers).length
                 });
             })
             .catch(error => {
@@ -472,8 +472,8 @@ final class FetchRedirectTests: XCTestCase {
         context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
             let result = args[0]
             if result["success"].boolValue == true {
-                XCTAssertEqual(Int(result["responseStatus"].numberValue ?? 0), 200, "Request should complete successfully")
-                XCTAssertTrue(result["headersSent"].boolValue ?? false, "Headers should be sent with request")
+                XCTAssertGreaterThan(Int(result["headerCount"].numberValue ?? 0), 0, "Should receive some headers")
+                // Note: Custom headers may or may not be preserved across redirects depending on the server
             } else {
                 XCTAssertTrue(true, "Network test skipped: \(result["error"].toString())")
             }
