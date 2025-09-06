@@ -559,3 +559,73 @@ sed -i '' 's/wait(for: \[expectation\])$/wait(for: [expectation], timeout: 10.0)
 - Use appropriate timeout values based on operation complexity
 - Consider network conditions and CI environment performance
 - Prefer shorter timeouts for faster feedback, but ensure reliability
+
+### **CRITICAL:** Test Case Content Verification
+**Always verify that test cases are actually testing what they claim to test:**
+
+```swift
+// ❌ WRONG - test name suggests redirect testing but only tests basic fetch
+func testRedirectFollowing() {
+    let script = """
+        fetch('https://httpbin.org/get').then(r => r.json())
+    """
+    // This doesn't test redirects at all!
+}
+
+// ✅ CORRECT - test actually verifies redirect behavior
+func testRedirectFollowing() {
+    let script = """
+        fetch('https://httpbin.org/redirect/2').then(r => ({
+            url: r.url,
+            redirected: r.redirected,
+            status: r.status
+        }))
+    """
+    // Verifies final URL, redirect flag, and status after following redirects
+}
+```
+
+**Common test verification failures:**
+- **Test names don't match behavior**: Method named `testErrorHandling` but only tests success cases
+- **Assertions don't verify the feature**: Testing that a promise resolves but not checking the actual result
+- **Mock/stub data isn't realistic**: Using simplified test data that doesn't exercise edge cases
+- **Missing negative test cases**: Only testing happy path without error conditions
+- **Incomplete feature coverage**: Testing one parameter but ignoring others in the same API
+- **Copy-paste errors**: Duplicated test logic that doesn't match the test name
+
+**Test content verification checklist:**
+1. **Read the test name and expected behavior** - what should this test prove?
+2. **Trace through the actual test code** - what does it actually test?
+3. **Check assertions match the feature** - do they verify the right properties?
+4. **Verify test data is appropriate** - does it exercise the intended code paths?
+5. **Ensure error cases are covered** - are failure modes tested?
+6. **Review edge cases** - are boundary conditions included?
+
+**Example verification patterns:**
+```swift
+// For redirect tests - verify redirect-specific properties
+XCTAssertTrue(result["redirected"].toBool())
+XCTAssertNotEqual(result["url"].toString(), originalUrl)
+
+// For error handling tests - actually trigger and verify errors
+XCTAssertTrue(result["error"].isObject)
+XCTAssertEqual(result["error"]["name"].toString(), "TypeError")
+
+// For performance tests - measure the right metrics
+measure { /* code that should be optimized */ }
+// Not just: measure { someUnrelatedSetup() }
+```
+
+**Anti-patterns to avoid:**
+- Tests that always pass regardless of implementation
+- Tests that verify test setup rather than actual functionality  
+- Tests with misleading names that don't match their actual behavior
+- Tests that only check basic "does not crash" without verifying correctness
+- Tests copied from other features without adaptation to the specific use case
+
+**When reviewing existing tests:**
+- Run tests individually to understand what they actually verify
+- Check if disabling the feature being tested causes the test to fail
+- Verify test names accurately describe what's being tested
+- Look for tests that might be testing implementation details rather than behavior
+- Ensure comprehensive coverage of the API surface, not just code coverage
