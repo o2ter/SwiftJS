@@ -1352,16 +1352,15 @@
                 // Read chunk directly from Swift file handle
                 const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
 
-                if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
+                if (!chunk || chunk.length === 0) {
                   // EOF reached
                   __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
                   controller.close();
                   return;
                 }
 
-                // Convert JSValue to Uint8Array
-                const bytes = chunk.typedArrayBytes;
-                controller.enqueue(new Uint8Array(bytes));
+                // chunk is already a Uint8Array from Swift
+                controller.enqueue(chunk);
 
                 // Continue reading asynchronously
                 setTimeout(readNextChunk, 0);
@@ -1386,6 +1385,36 @@
 
       // For in-memory File objects, use the parent Blob stream() method
       return super.stream();
+    }
+
+    async text() {
+      // If this File was created from a file system path, read directly from disk
+      const filePath = this.#filePath;
+      if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath) && __APPLE_SPEC__.FileSystem.isFile(filePath)) {
+        const content = __APPLE_SPEC__.FileSystem.readFile(filePath);
+        if (content === null) {
+          throw new Error(`Failed to read file: ${filePath}`);
+        }
+        return content;
+      }
+
+      // For in-memory File objects, use the parent Blob text() method
+      return super.text();
+    }
+
+    async arrayBuffer() {
+      // If this File was created from a file system path, read directly from disk
+      const filePath = this.#filePath;
+      if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath) && __APPLE_SPEC__.FileSystem.isFile(filePath)) {
+        const data = __APPLE_SPEC__.FileSystem.readFileData(filePath);
+        if (!data) {
+          throw new Error(`Failed to read file: ${filePath}`);
+        }
+        return data.buffer;
+      }
+
+      // For in-memory File objects, use the parent Blob arrayBuffer() method
+      return super.arrayBuffer();
     }
 
     // Static method to create File from file system path
