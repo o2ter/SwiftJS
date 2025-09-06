@@ -121,19 +121,25 @@ extension SwiftJS {
     ) -> Int {
         let id = self.context.timerId
         let context = self.context  // Capture the context
-        self.context.timer[id] = Timer.scheduledTimer(
-            withTimeInterval: ms / 1000,
-            repeats: repeats,
-            block: { _ in
-                _ = callback.call(withArguments: arguments)
-                
-                // Auto-cleanup non-repeating timers (setTimeout)
-                if !repeats {
-                    let timer = context.timer.removeValue(forKey: id)
-                    timer?.invalidate()
+        let runLoop = self.runloop  // Capture the JavaScript context's RunLoop
+
+        // Ensure timer is created on the JavaScript context's RunLoop thread
+        runLoop.perform {
+            context.timer[id] = Timer.scheduledTimer(
+                withTimeInterval: ms / 1000,
+                repeats: repeats,
+                block: { _ in
+                    _ = callback.call(withArguments: arguments)
+
+                    // Auto-cleanup non-repeating timers (setTimeout)
+                    if !repeats {
+                        let timer = context.timer.removeValue(forKey: id)
+                        timer?.invalidate()
+                    }
                 }
-            }
-        )
+            )
+        }
+
         self.context.timerId += 1
         return id
     }

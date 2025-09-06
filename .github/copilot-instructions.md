@@ -89,6 +89,23 @@ SwiftJS.Value(newFunctionIn: context) { args, this in
 ### Timer Management
 Timers are managed through the `SwiftJS.Context` class and automatically cleaned up. The polyfill provides `setTimeout`/`setInterval` that work with the RunLoop.
 
+**CRITICAL Threading Requirement:** Timer creation must happen on the JavaScript context's RunLoop thread:
+```swift
+// ❌ WRONG - creates timer on current thread (might be background Task)
+context.timer[id] = Timer.scheduledTimer(...)
+
+// ✅ CORRECT - ensures timer creation on JavaScript RunLoop thread
+runLoop.perform {
+    context.timer[id] = Timer.scheduledTimer(...)
+}
+```
+
+**Why this matters:**
+- JavaScript context runs in its own dedicated thread with its own RunLoop
+- Network requests execute Promise callbacks in background Task contexts
+- `setTimeout`/`setInterval` called from fetch callbacks must schedule timers on the correct RunLoop
+- Without `runLoop.perform`, timers created from async callbacks will never execute
+
 ### Resource Bundle Access
 JavaScript resources are bundled and accessed via `Bundle.module`:
 ```swift
