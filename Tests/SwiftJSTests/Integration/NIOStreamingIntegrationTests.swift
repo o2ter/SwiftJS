@@ -141,8 +141,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Should return a promise")
         
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let success = result["success"].boolValue ?? false
@@ -265,8 +265,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Upload should return a promise")
         
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let success = result["success"].boolValue ?? false
@@ -346,8 +346,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Progress streaming should return a promise")
         
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let success = result["success"].boolValue ?? false
@@ -429,8 +429,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         XCTAssertFalse(promise.isUndefined, "Error handling should return a promise")
         
         // Properly await the promise and validate results
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let success = result["success"].boolValue ?? false
@@ -663,8 +663,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         XCTAssertFalse(promise.isUndefined, "Connection failure test should return a promise")
 
         // Properly await the promise and validate results
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let success = result["success"].boolValue ?? false
@@ -800,8 +800,8 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         XCTAssertFalse(promise.isUndefined, "Resource exhaustion test should return a promise")
 
         // Properly await the promise and validate results
-        // Use the new awaitPromise method for simplified async handling
-        let result = try await promise.awaitPromise()
+        // Use the new awaited method for simplified async handling
+        let result = try await promise.awaited()
 
         // Validate the results with comprehensive error handling
         let totalStreams = Int(result["totalStreams"].numberValue ?? 0)
@@ -925,7 +925,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         XCTAssertFalse(promise.isUndefined, "Data integrity test should return a promise")
         
         // Properly wait for the promise to resolve and validate results
-        let result = try await promise.awaitPromise()
+        let result = try await promise.awaited()
 
         // Validate the results with proper error handling
         let success = result["success"].boolValue ?? false

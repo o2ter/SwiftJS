@@ -748,12 +748,12 @@ extension SwiftJS.Value {
     /// Usage:
     /// ```swift
     /// let promise = context.evaluateScript("fetch('https://example.com')")
-    /// let result = try await promise.awaitPromise()
+    /// let result = try await promise.awaited()
     /// ```
     ///
     /// - Returns: The resolved value of the promise
     /// - Throws: An error if the promise is rejected or if this value is not a promise
-    public func awaitPromise() async throws -> SwiftJS.Value {
+    public func awaited() async throws -> SwiftJS.Value {
         guard case let .value(jsValue) = self.base else {
             throw SwiftJS.Value(
                 newErrorFromMessage: "Value is not a JavaScript object", in: SwiftJS())
