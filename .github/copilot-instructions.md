@@ -1,5 +1,11 @@
 # SwiftJS - JavaScript Runtime for Swift
 
+## ⚠️ CRITICAL: Documentation Update Requirement
+**ALWAYS UPDATE DOCUMENTATION WHEN MAKING API CHANGES**
+- Any API modification requires corresponding documentation updates
+- Test all documentation examples after changes
+- See "Documentation Update Requirements" section for full details
+
 ## Architecture Overview
 
 SwiftJS is a JavaScript runtime built on Apple's JavaScriptCore, providing a bridge between Swift and JavaScript with Node.js-like APIs. The architecture follows a layered approach:
@@ -243,6 +249,49 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Use SwiftJSRunner or test cases to validate functionality
 - Don't rely on external documentation without verification - JavaScriptCore has unique behaviors
 - Document any discrepancies between expected and actual behavior
+
+### **CRITICAL:** Documentation Update Requirements
+**MANDATORY:** Always update documentation when making API changes:
+
+**For JavaScript API Changes:**
+- Update `docs/API.md` with new or modified JavaScript APIs, including examples
+- Update method signatures, parameter descriptions, and return values
+- Add or update code examples demonstrating the API usage
+- Document any breaking changes or migration requirements
+
+**For Performance-Related Changes:**
+- Update `docs/Performance.md` with new optimization patterns or pitfalls
+- Add benchmarking information for significant performance improvements
+- Document any performance regressions and mitigation strategies
+
+**For SwiftJSRunner Changes:**
+- Update `docs/SwiftJSRunner.md` for CLI behavior modifications
+- Update command-line options, examples, and troubleshooting sections
+- Document any changes to auto-termination or error handling behavior
+
+**For Core Architecture Changes:**
+- Update `README.md` if core functionality, installation, or basic usage changes
+- Update architectural diagrams and feature lists for major changes
+- Update quick start examples if they no longer work
+
+**For Implementation Insights:**
+- Update `.github/copilot-instructions.md` with architectural discoveries
+- Document threading model insights, JavaScriptCore behaviors, or performance patterns
+- Add critical implementation details that future developers need to know
+
+**Documentation Validation Process:**
+1. **Test all code examples** in the documentation after changes
+2. **Run SwiftJSRunner** with documented examples to ensure they work
+3. **Check cross-references** between documentation files for consistency
+4. **Verify API signatures** match the actual implementation
+5. **Update version-specific information** if compatibility changes
+
+**Documentation Quality Standards:**
+- Include working code examples for all new APIs
+- Provide both basic and advanced usage patterns
+- Document error conditions and exception handling
+- Explain performance implications and best practices
+- Use consistent terminology across all documentation files
 
 ### JavaScriptCore Behavior Documentation
 When discovering important JavaScriptCore facts or behaviors during development:
