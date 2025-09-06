@@ -3801,7 +3801,7 @@
   };
 
   // Enhanced Readable Stream BYOB (Bring Your Own Buffer) Reader
-  class ReadableStreamBYOBReader {
+  globalThis.ReadableStreamBYOBReader = class ReadableStreamBYOBReader {
     #stream;
     #released = false;
 
