@@ -111,10 +111,10 @@ if let polyfillJs = Bundle.module.url(forResource: "polyfill", withExtension: "j
 # Build library
 swift build
 
-# Run test executable (runs indefinitely with timers)
+# Run test executable
 swift run SwiftJSTests
 
-# Run test cases (preferred method for AI agents)
+# Run test cases (not for AI agents)
 swift test
 ```
 

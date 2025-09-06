@@ -14,7 +14,8 @@
     requestOriginalBody: Symbol('Request._originalBody'),
     streamInternal: Symbol('Stream._internal'),
     abortSignalMarkAborted: Symbol('AbortSignal._markAborted'),
-    filePath: Symbol('File._filePath')
+    filePath: Symbol('File._filePath'),
+    eventTargetOriginalListener: Symbol('EventTarget._originalListener')
   };
 
   // Process API - provides Node.js-like process object
@@ -80,7 +81,9 @@
         return this.sep + result;
       }
       return result || '.';
-    }    static resolve(...segments) {
+    }
+
+    static resolve(...segments) {
       let resolvedPath = '';
       let resolvedAbsolute = false;
 
@@ -544,7 +547,7 @@
         listener;
 
       // Store original listener reference for removal
-      wrappedListener._originalListener = listener;
+      wrappedListener[SYMBOLS.eventTargetOriginalListener] = listener;
 
       this.#listeners[type].push(wrappedListener);
     }
@@ -552,7 +555,7 @@
     removeEventListener(type, listener) {
       if (!this.#listeners[type]) return;
       this.#listeners[type] = this.#listeners[type].filter(l =>
-        l !== listener && l._originalListener !== listener
+        l !== listener && l[SYMBOLS.eventTargetOriginalListener] !== listener
       );
     }
 
