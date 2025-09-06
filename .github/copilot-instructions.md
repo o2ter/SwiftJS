@@ -98,30 +98,6 @@ if let polyfillJs = Bundle.module.url(forResource: "polyfill", withExtension: "j
 }
 ```
 
-## Build & Test Workflow
-
-### Package Structure
-- Library target: `SwiftJS` 
-- Test executable: `SwiftJSTests`
-- Uses Swift Package Manager with Swift 6.0 tools
-- Platforms: macOS 14+, iOS 17+, macCatalyst 17+
-
-### Running Tests
-```bash
-# Build library
-swift build
-
-# Run test executable
-swift run SwiftJSTests
-
-# Run test cases (not for AI agents)
-swift test
-```
-
-### Dependencies
-- `swift-crypto`: For cryptographic operations
-- Native `JavaScriptCore`: Core JavaScript engine
-
 ## Project Conventions
 
 ### Code Style and Naming
