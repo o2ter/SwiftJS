@@ -131,6 +131,13 @@ swift test
 - Only deviate from web standards when necessary for Swift/Apple platform integration
 - Document any deviations from standards with clear reasoning
 
+**IMPORTANT: No DOM-Specific APIs**
+- SwiftJS is a server-side runtime and does not implement DOM-specific APIs
+- Use standard `Error` objects instead of DOM-specific errors like `DOMException`
+- Avoid DOM-related concepts like `window`, `document`, `HTMLElement`, etc.
+- Focus on web standard APIs that work in non-DOM environments (workers, Node.js-like runtime)
+- When web specs reference DOM concepts, implement the non-DOM portions or provide appropriate alternatives
+
 ### Error Handling
 - JavaScript exceptions are captured via `JSContext.exceptionHandler`
 - Swift functions exposed to JS should throw `SwiftJS.Value` errors for proper JS error handling

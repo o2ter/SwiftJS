@@ -738,10 +738,14 @@
   };
 
   // Base64 encoding/decoding functions for Data URLs and binary data
-  globalThis.btoa = function (str) {
-    if (typeof str !== 'string') {
+  globalThis.btoa = function (data) {
+    // Web standard: btoa should accept any value and convert to string
+    if (arguments.length === 0) {
       throw new TypeError('Failed to execute \'btoa\': 1 argument required, but only 0 present.');
     }
+
+    // Convert to string following web standard ToString operation
+    const str = String(data);
 
     // Convert string to UTF-8 bytes first
     const utf8Bytes = [];
@@ -772,10 +776,14 @@
     return result;
   };
 
-  globalThis.atob = function (base64) {
-    if (typeof base64 !== 'string') {
+  globalThis.atob = function (data) {
+    // Web standard: atob should accept any value and convert to string
+    if (arguments.length === 0) {
       throw new TypeError('Failed to execute \'atob\': 1 argument required, but only 0 present.');
     }
+
+    // Convert to string following web standard ToString operation
+    let base64 = String(data);
 
     // Remove whitespace and validate base64 characters
     base64 = base64.replace(/\s/g, '');
@@ -818,9 +826,7 @@
     }
 
     return result;
-  };
-
-  // Enhanced Console implementation
+  };  // Enhanced Console implementation
   globalThis.console = globalThis.console || {};
 
   // Console state tracking
