@@ -3673,9 +3673,7 @@
               writer.write(readResult.value));
           }
         } catch (error) {
-          cleanup();
-
-          // Handle different error scenarios
+          // Handle different error scenarios BEFORE cleanup
           if (error.message === 'AbortError') {
             if (!preventCancel) {
               await reader.cancel().catch(() => { });
@@ -3693,6 +3691,7 @@
             }
           }
 
+          cleanup();
           throw error;
         }
       }
