@@ -42,37 +42,26 @@ import JavaScriptCore
 
 @objc final class JSURLRequest: NSObject, JSURLRequestExport, @unchecked Sendable {
     
-    private var request: URLRequest
+    public var url: String?
+    public var httpMethod: String = "GET"
+    public var allHTTPHeaderFields: [String: String] = [:]
+    public var timeoutInterval: Double = 60.0
+    private var httpBodyData: Data?
     
     init(url: String) {
-        guard let url = URL(string: url) else {
-            self.request = URLRequest(url: URL(string: "about:blank")!)
+        guard URL(string: url) != nil else {
+            self.url = "about:blank"
             super.init()
-            self.request.httpMethod = "GET" // Set default method
             return
         }
-        self.request = URLRequest(url: url)
-        self.request.httpMethod = "GET" // Set default method
+        self.url = url
         super.init()
     }
     
-    var url: String? {
-        return request.url?.absoluteString
-    }
-    
-    var httpMethod: String {
-        get { return request.httpMethod ?? "GET" }
-        set { request.httpMethod = newValue }
-    }
-    
-    var allHTTPHeaderFields: [String: String] {
-        get { return request.allHTTPHeaderFields ?? [:] }
-        set { request.allHTTPHeaderFields = newValue }
-    }
     
     var httpBody: JSValue? {
         get {
-            guard let data = request.httpBody,
+            guard let data = httpBodyData,
                   let context = JSContext.current() else { return nil }
             return JSValue.uint8Array(count: data.count, in: context) { buffer in
                 data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
@@ -81,119 +70,38 @@ import JavaScriptCore
         set {
             if let jsValue = newValue, jsValue.isTypedArray {
                 let bytes = jsValue.typedArrayBytes
-                request.httpBody = Data(bytes.bindMemory(to: UInt8.self))
+                httpBodyData = Data(bytes.bindMemory(to: UInt8.self))
             } else if let jsValue = newValue, jsValue.isString {
-                request.httpBody = jsValue.toString().data(using: .utf8)
+                httpBodyData = jsValue.toString().data(using: .utf8)
             } else {
-                request.httpBody = nil
+                httpBodyData = nil
             }
         }
-    }
-    
-    var timeoutInterval: Double {
-        get { return request.timeoutInterval }
-        set { request.timeoutInterval = newValue }
     }
     
     
     func setValueForHTTPHeaderField(_ value: String?, _ field: String) {
-        request.setValue(value, forHTTPHeaderField: field)
+        if let value = value {
+            allHTTPHeaderFields[field] = value
+        } else {
+            allHTTPHeaderFields.removeValue(forKey: field)
+        }
     }
     
     func addValueForHTTPHeaderField(_ value: String, _ field: String) {
-        request.addValue(value, forHTTPHeaderField: field)
+        if let existing = allHTTPHeaderFields[field] {
+            allHTTPHeaderFields[field] = existing + ", " + value
+        } else {
+            allHTTPHeaderFields[field] = value
+        }
     }
     
     func valueForHTTPHeaderField(_ field: String) -> String? {
-        return request.value(forHTTPHeaderField: field)
+        return allHTTPHeaderFields[field]
     }
     
-    var urlRequest: URLRequest {
-        return request
-    }
-}
-
-@objc protocol JSURLResponseExport: JSExport {
-    var url: String? { get }
-    var statusCode: Int { get }
-    var allHeaderFields: [String: String] { get }
-    var textEncodingName: String? { get }
-    var expectedContentLength: Int64 { get }
-    var mimeType: String? { get }
-    
-    func value(forHTTPHeaderField field: String) -> String?
-}
-
-@objc final class JSURLResponse: NSObject, JSURLResponseExport {
-    
-    private let response: HTTPURLResponse
-    private let customStatusCode: Int?
-    private let customHeaders: [String: String]?
-    private let customURL: String?
-    
-    init(response: HTTPURLResponse) {
-        self.response = response
-        self.customStatusCode = nil
-        self.customHeaders = nil
-        self.customURL = nil
-        super.init()
-    }
-
-    // Convenience initializer for NIO responses
-    init(statusCode: Int, headers: [String: String], url: String?) {
-        // Create a dummy HTTPURLResponse for compatibility
-        let dummyURL = URL(string: url ?? "https://example.com")!
-        self.response = HTTPURLResponse(
-            url: dummyURL, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers)!
-        self.customStatusCode = statusCode
-        self.customHeaders = headers
-        self.customURL = url
-        super.init()
-    }
-    
-    var url: String? {
-        return customURL ?? response.url?.absoluteString
-    }
-    
-    var statusCode: Int {
-        return customStatusCode ?? response.statusCode
-    }
-    
-    var allHeaderFields: [String: String] {
-        if let customHeaders = customHeaders {
-            return customHeaders
-        }
-        return response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
-            if let key = pair.key as? String, let value = pair.value as? String {
-                result[key] = value
-            }
-        }
-    }
-    
-    var textEncodingName: String? {
-        return response.textEncodingName
-    }
-    
-    var expectedContentLength: Int64 {
-        if let contentLength = customHeaders?["Content-Length"] ?? customHeaders?["content-length"]
-        {
-            return Int64(contentLength) ?? response.expectedContentLength
-        }
-        return response.expectedContentLength
-    }
-    
-    var mimeType: String? {
-        if let contentType = customHeaders?["Content-Type"] ?? customHeaders?["content-type"] {
-            return contentType.components(separatedBy: ";").first?.trimmingCharacters(
-                in: .whitespaces)
-        }
-        return response.mimeType
-    }
-    
-    func value(forHTTPHeaderField field: String) -> String? {
-        if let customHeaders = customHeaders {
-            return customHeaders[field] ?? customHeaders[field.lowercased()]
-        }
-        return response.value(forHTTPHeaderField: field)
+    // Provide access to the raw body data for streaming operations
+    var bodyData: Data? {
+        return httpBodyData
     }
 }
