@@ -26,6 +26,11 @@
 import JavaScriptCore
 import NIOHTTP1
 
+// Reference-type accumulator used by stream controllers
+final class DataAccumulator: @unchecked Sendable {
+    var data: Data = Data()
+}
+
 @objc protocol JSURLSessionExport: JSExport {
     
     func shared() -> JSURLSession
@@ -72,7 +77,8 @@ import NIOHTTP1
                 }
 
                 do {
-                    var accumulatedData = Data()
+                    // Use a reference-type accumulator so controllers can safely append data
+                    let accumulator = DataAccumulator()
 
                     // Choose stream controller based on whether we have a progress handler
                     let streamController: StreamControllerProtocol
@@ -81,12 +87,11 @@ import NIOHTTP1
                         streamController = ProgressStreamController(
                             context: context,
                             progressHandler: progressHandler,
-                            accumulatedData: &accumulatedData
+                            accumulator: accumulator
                         )
                     } else {
                         // Regular mode - just accumulate data
-                        streamController = AccumulatingStreamController(
-                            accumulatedData: &accumulatedData)
+                        streamController = AccumulatingStreamController(accumulator: accumulator)
                     }
 
                     let responseHead: HTTPResponseHead
@@ -131,34 +136,32 @@ import NIOHTTP1
                         url: request.url
                     )
 
-                    if progressHandler != nil {
-                        // Streaming mode - resolve with response only (progress handler called completion in close())
-                        resolve?.call(withArguments: [jsResponse])
-                    } else {
-                        // Regular mode - resolve with data and response
-                        let dataValue: JSValue
-                        if !accumulatedData.isEmpty {
-                            dataValue = JSValue.uint8Array(
-                                count: accumulatedData.count, in: context
-                            ) { buffer in
-                                accumulatedData.copyBytes(
-                                    to: buffer.bindMemory(to: UInt8.self),
-                                    count: accumulatedData.count)
-                            }
-                        } else {
-                            dataValue = JSValue.uint8Array(count: 0, in: context)
+                    // Build data JSValue from accumulator
+                    let dataValue: JSValue
+                    if !accumulator.data.isEmpty {
+                        dataValue = JSValue.uint8Array(count: accumulator.data.count, in: context) {
+                            buffer in
+                            accumulator.data.copyBytes(
+                                to: buffer.bindMemory(to: UInt8.self), count: accumulator.data.count
+                            )
                         }
+                    } else {
+                        dataValue = JSValue.uint8Array(count: 0, in: context)
+                    }
 
-                        let result = JSValue(
-                            object: [
-                                "data": dataValue,
-                                "response": JSValue(object: jsResponse, in: context)!,
-                            ], in: context)!
+                    // For streaming mode (progress handler provided), resolve with JSURLResponse directly
+                    if progressHandler != nil {
+                        resolve?.call(withArguments: [JSValue(object: jsResponse, in: context)!])
+                    } else {
+                        // Non-streaming mode - resolve with a consistent result object containing `data` and `response`
+                        let responseValue = JSValue(object: jsResponse, in: context)!
+                        let result = JSValue(newObjectIn: context)!
+                        result.setValue(dataValue, forProperty: "data")
+                        result.setValue(responseValue, forProperty: "response")
 
                         // Call legacy completion handler if provided
                         if let handler = completionHandler {
                             let nullValue = JSValue(nullIn: context)!
-                            let responseValue = JSValue(object: jsResponse, in: context)!
                             handler.call(withArguments: [nullValue, dataValue, responseValue])
                         }
 
@@ -177,17 +180,16 @@ import NIOHTTP1
 /// Stream controller that accumulates all data without calling progress handlers
 /// Used for regular dataTask methods that need all data at once
 final class AccumulatingStreamController: StreamControllerProtocol, @unchecked Sendable {
-    private var accumulatedDataRef: UnsafeMutablePointer<Data>
+    private let accumulator: DataAccumulator
     private let lock = NSLock()
-
-    init(accumulatedData: inout Data) {
-        self.accumulatedDataRef = withUnsafeMutablePointer(to: &accumulatedData) { $0 }
+    init(accumulator: DataAccumulator) {
+        self.accumulator = accumulator
     }
-    
+
     func enqueue(_ data: Data) {
         lock.lock()
         defer { lock.unlock() }
-        accumulatedDataRef.pointee.append(data)
+        accumulator.data.append(data)
     }
 
     func error(_ error: Error) {
@@ -204,29 +206,32 @@ final class AccumulatingStreamController: StreamControllerProtocol, @unchecked S
 final class ProgressStreamController: StreamControllerProtocol, @unchecked Sendable {
     private let context: JSContext
     private let progressHandler: JSValue?
-    private var accumulatedDataRef: UnsafeMutablePointer<Data>
+    private let accumulator: DataAccumulator
     private let lock = NSLock()
 
-    init(context: JSContext, progressHandler: JSValue?, accumulatedData: inout Data) {
+    init(context: JSContext, progressHandler: JSValue?, accumulator: DataAccumulator) {
         self.context = context
         self.progressHandler = progressHandler
-        self.accumulatedDataRef = withUnsafeMutablePointer(to: &accumulatedData) { $0 }
+        self.accumulator = accumulator
     }
 
     func enqueue(_ data: Data) {
         lock.lock()
         defer { lock.unlock() }
 
-        accumulatedDataRef.pointee.append(data)
+        accumulator.data.append(data)
 
-        // Call progress handler if provided
+        // Call progress handler if provided - ensure we call on the JSContext's thread
         if let progressHandler = progressHandler, !data.isEmpty {
-            let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+            let chunk = data
+            DispatchQueue.main.async {
+                let uint8Array = JSValue.uint8Array(count: chunk.count, in: self.context) {
+                    buffer in
+                    chunk.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: chunk.count)
+                }
+                // Call progress handler with data chunk and completion status (false = not complete)
+                progressHandler.call(withArguments: [uint8Array, false])
             }
-
-            // Call progress handler with data chunk and completion status (false = not complete)
-            progressHandler.call(withArguments: [uint8Array, false])
         }
     }
 
@@ -237,9 +242,11 @@ final class ProgressStreamController: StreamControllerProtocol, @unchecked Senda
     func close() {
         // Call progress handler with completion signal
         if let progressHandler = progressHandler {
-            // Call with empty data and completion = true
-            let emptyArray = JSValue.uint8Array(count: 0, in: context) { _ in }
-            progressHandler.call(withArguments: [emptyArray, true])
+            // Call with empty data and completion = true on JS thread
+            DispatchQueue.main.async {
+                let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
+                progressHandler.call(withArguments: [emptyArray, true])
+            }
         }
     }
 }

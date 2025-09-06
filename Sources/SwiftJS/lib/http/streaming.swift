@@ -37,59 +37,6 @@ protocol StreamControllerProtocol: Sendable {
     func close()
 }
 
-/// Stream controller for managing JavaScript ReadableStream from Swift
-final class SwiftJSStreamController: @unchecked Sendable, StreamControllerProtocol {
-    private let context: JSContext
-    private let controller: JSValue
-    private var isClosed = false
-    private let lock = NSLock()
-    
-    init(context: JSContext, controller: JSValue) {
-        self.context = context
-        self.controller = controller
-    }
-    
-    func enqueue(_ data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        guard !isClosed else { return }
-        
-        context.evaluateScript("void 0") // Ensure context is active
-        
-        let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
-            data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
-        }
-        
-        controller.objectForKeyedSubscript("enqueue")?.call(withArguments: [uint8Array])
-    }
-    
-    func error(_ error: Error) {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        guard !isClosed else { return }
-        isClosed = true
-        
-        context.evaluateScript("void 0") // Ensure context is active
-        
-        let jsError = JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
-        controller.objectForKeyedSubscript("error")?.call(withArguments: [jsError])
-    }
-    
-    func close() {
-        lock.lock()
-        defer { lock.unlock() }
-        
-        guard !isClosed else { return }
-        isClosed = true
-        
-        context.evaluateScript("void 0") // Ensure context is active
-        
-        controller.objectForKeyedSubscript("close")?.call(withArguments: [])
-    }
-}
-
 /// NIO-based HTTP client for streaming requests and responses
 final class NIOHTTPClient: @unchecked Sendable {
     private let httpClient: HTTPClient
