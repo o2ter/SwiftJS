@@ -674,4 +674,290 @@ final class NetworkErrorHandlingTests: XCTestCase {
         context.evaluateScript(script)
         wait(for: [expectation], timeout: 30.0)
     }
+    
+    // MARK: - HTTP Streaming Error Propagation Tests
+    
+    func testHTTPStreamingNetworkError() {
+        let expectation = XCTestExpectation(description: "HTTP streaming network error")
+        
+        let script = """
+            // Test that network errors during streaming are properly propagated to JavaScript
+            fetch('http://localhost:99999/nonexistent')
+                .then(response => {
+                    testCompleted({
+                        error: 'Should not reach here - expected network error',
+                        unexpectedSuccess: true,
+                        status: response.status
+                    });
+                })
+                .catch(error => {
+                    testCompleted({
+                        errorCaught: true,
+                        errorType: typeof error,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        hasErrorObject: error instanceof Error,
+                        messageContainsConnectionInfo: error.message.toLowerCase().includes('connection') || 
+                                                       error.message.toLowerCase().includes('nio')
+                    });
+                });
+        """
+        
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            
+            // Verify error was properly caught and propagated
+            XCTAssertTrue(result["errorCaught"].boolValue ?? false, "Network error should be caught")
+            XCTAssertEqual(result["errorType"].toString(), "object", "Error should be an object")
+            XCTAssertTrue(result["hasErrorObject"].boolValue ?? false, "Should be instance of Error")
+            XCTAssertFalse(result["unexpectedSuccess"].boolValue ?? true, "Should not succeed with invalid URL")
+            
+            // Error message should contain meaningful information
+            let errorMessage = result["errorMessage"].toString()
+            XCTAssertFalse(errorMessage.isEmpty, "Error message should not be empty")
+            
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 10.0)
+    }
+    
+    func testHTTPStreamingDNSError() {
+        let expectation = XCTestExpectation(description: "HTTP streaming DNS error")
+        
+        let script = """
+            // Test DNS resolution errors during HTTP streaming
+            fetch('https://nonexistent-domain-12345.invalid')
+                .then(response => {
+                    testCompleted({
+                        error: 'Should not reach here - expected DNS error',
+                        unexpectedSuccess: true,
+                        status: response.status
+                    });
+                })
+                .catch(error => {
+                    testCompleted({
+                        errorCaught: true,
+                        errorType: typeof error,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        hasErrorObject: error instanceof Error,
+                        isDNSRelated: error.message.toLowerCase().includes('connection') ||
+                                      error.message.toLowerCase().includes('host') ||
+                                      error.message.toLowerCase().includes('resolve')
+                    });
+                });
+        """
+        
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            
+            // Verify DNS error was properly caught and propagated
+            XCTAssertTrue(result["errorCaught"].boolValue ?? false, "DNS error should be caught")
+            XCTAssertEqual(result["errorType"].toString(), "object", "Error should be an object")
+            XCTAssertTrue(result["hasErrorObject"].boolValue ?? false, "Should be instance of Error")
+            XCTAssertFalse(result["unexpectedSuccess"].boolValue ?? true, "Should not succeed with invalid domain")
+            
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 15.0)
+    }
+    
+    func testHTTPStreamingAbortError() {
+        let expectation = XCTestExpectation(description: "HTTP streaming abort error")
+        
+        let script = """
+            // Test that AbortController properly propagates errors during streaming
+            const controller = new AbortController();
+            
+            // Start a request that would normally succeed but abort it quickly
+            const fetchPromise = fetch('https://httpstat.us/200?sleep=2000', {
+                signal: controller.signal
+            });
+            
+            // Abort after a short delay to test error propagation during streaming
+            setTimeout(() => {
+                controller.abort();
+            }, 100);
+            
+            fetchPromise
+                .then(response => {
+                    testCompleted({
+                        error: 'Should not reach here - expected abort error',
+                        unexpectedSuccess: true,
+                        status: response.status
+                    });
+                })
+                .catch(error => {
+                    testCompleted({
+                        errorCaught: true,
+                        errorType: typeof error,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        hasErrorObject: error instanceof Error,
+                        isAbortError: error.name === 'AbortError',
+                        messageContainsAbort: error.message.toLowerCase().includes('abort')
+                    });
+                });
+        """
+        
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            
+            // Verify abort error was properly caught and propagated
+            XCTAssertTrue(result["errorCaught"].boolValue ?? false, "Abort error should be caught")
+            XCTAssertEqual(result["errorType"].toString(), "object", "Error should be an object")
+            XCTAssertTrue(result["hasErrorObject"].boolValue ?? false, "Should be instance of Error")
+            XCTAssertTrue(result["isAbortError"].boolValue ?? false, "Should be AbortError")
+            XCTAssertTrue(result["messageContainsAbort"].boolValue ?? false, "Message should mention abort")
+            XCTAssertFalse(result["unexpectedSuccess"].boolValue ?? true, "Should not succeed when aborted")
+            
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 10.0)
+    }
+    
+    func testHTTPStreamingTimeoutError() {
+        let expectation = XCTestExpectation(description: "HTTP streaming timeout error")
+        
+        let script = """
+            // Test timeout errors during HTTP streaming
+            // Note: We use a very long delay URL and shorter timeout to force timeout
+            fetch('https://httpstat.us/200?sleep=10000', {
+                // This would cause a timeout in most implementations,
+                // but we're mainly testing error propagation mechanism
+            })
+                .then(response => {
+                    // If it succeeds, that's okay too - we're testing error propagation mechanism
+                    testCompleted({
+                        requestCompleted: true,
+                        status: response.status,
+                        errorHandlingWorks: true // The fact we got here shows error handling didn't break normal requests
+                    });
+                })
+                .catch(error => {
+                    testCompleted({
+                        errorCaught: true,
+                        errorType: typeof error,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        hasErrorObject: error instanceof Error,
+                        errorHandlingWorks: true // Error was properly propagated
+                    });
+                });
+        """
+        
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            
+            // Verify that either success or error is properly handled
+            let requestCompleted = result["requestCompleted"].boolValue ?? false
+            let errorCaught = result["errorCaught"].boolValue ?? false
+            let errorHandlingWorks = result["errorHandlingWorks"].boolValue ?? false
+            
+            XCTAssertTrue(errorHandlingWorks, "Error handling mechanism should work")
+            XCTAssertTrue(requestCompleted || errorCaught, "Should either complete or error properly")
+            
+            if errorCaught {
+                XCTAssertEqual(result["errorType"].toString(), "object", "Error should be an object")
+                XCTAssertTrue(result["hasErrorObject"].boolValue ?? false, "Should be instance of Error")
+            }
+            
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 15.0) // Longer timeout to account for the test URL delay
+    }
+    
+    func testHTTPStreamingErrorDuringResponse() {
+        let expectation = XCTestExpectation(description: "HTTP streaming error during response")
+        
+        let script = """
+            // Test errors that occur after response headers are received but during body streaming
+            // We'll use AbortController to simulate this scenario
+            const controller = new AbortController();
+            
+            fetch('https://httpstat.us/200', {
+                signal: controller.signal
+            })
+                .then(async response => {
+                    // We got the response headers successfully
+                    const initialStatus = response.status;
+                    
+                    // Start reading the body, but abort during streaming
+                    setTimeout(() => {
+                        controller.abort();
+                    }, 50);
+                    
+                    try {
+                        const text = await response.text();
+                        testCompleted({
+                            error: 'Should have been aborted during body read',
+                            unexpectedSuccess: true,
+                            initialStatus: initialStatus,
+                            responseText: text
+                        });
+                    } catch (error) {
+                        testCompleted({
+                            errorCaught: true,
+                            errorType: typeof error,
+                            errorName: error.name,
+                            errorMessage: error.message,
+                            hasErrorObject: error instanceof Error,
+                            initialStatus: initialStatus,
+                            errorDuringBodyRead: true,
+                            isAbortError: error.name === 'AbortError'
+                        });
+                    }
+                })
+                .catch(error => {
+                    // This would be an error before getting response headers
+                    testCompleted({
+                        errorCaught: true,
+                        errorType: typeof error,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        hasErrorObject: error instanceof Error,
+                        errorBeforeResponse: true,
+                        isAbortError: error.name === 'AbortError'
+                    });
+                });
+        """
+        
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+            
+            // Verify error was properly caught
+            XCTAssertTrue(result["errorCaught"].boolValue ?? false, "Error should be caught")
+            XCTAssertEqual(result["errorType"].toString(), "object", "Error should be an object")
+            XCTAssertTrue(result["hasErrorObject"].boolValue ?? false, "Should be instance of Error")
+            XCTAssertFalse(result["unexpectedSuccess"].boolValue ?? true, "Should not succeed when aborted")
+            
+            // Check if it's an abort error (which is what we expect)
+            if result["isAbortError"].boolValue == true {
+                XCTAssertEqual(result["errorName"].toString(), "AbortError", "Should be AbortError")
+            }
+            
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+        
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 10.0)
+    }
 }

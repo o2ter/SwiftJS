@@ -35,10 +35,12 @@ import AsyncHTTPClient
 final class StreamController: @unchecked Sendable {
     private let context: JSContext
     private let progressHandler: JSValue
+    private let rejectHandler: JSValue?
 
-    init(context: JSContext, progressHandler: JSValue) {
+    init(context: JSContext, progressHandler: JSValue, rejectHandler: JSValue? = nil) {
         self.context = context
         self.progressHandler = progressHandler
+        self.rejectHandler = rejectHandler
     }
 
     func enqueue(_ chunk: Data) {
@@ -54,7 +56,15 @@ final class StreamController: @unchecked Sendable {
     }
 
     func error(_ error: Error) {
-        // Error handling is done at the task level
+        // Communicate error to JavaScript by rejecting the promise if reject handler is available
+        if let rejectHandler = rejectHandler {
+            let jsError = JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
+            rejectHandler.call(withArguments: [jsError])
+        }
+        // Also call progressHandler with error indicator (empty chunk + completion)
+        // This allows the JavaScript polyfill to handle cleanup if needed
+        let emptyArray = JSValue.uint8Array(count: 0, in: context) { _ in }
+        progressHandler.call(withArguments: [emptyArray, true])
     }
 
     func close() {

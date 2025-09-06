@@ -72,7 +72,8 @@ import NIOHTTP1
                 do {
                     let streamController = StreamController(
                         context: context,
-                        progressHandler: progressHandler
+                        progressHandler: progressHandler,
+                        rejectHandler: reject
                     )
 
                     let responseHead: HTTPResponseHead
