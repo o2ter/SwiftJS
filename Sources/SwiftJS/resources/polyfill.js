@@ -3270,8 +3270,6 @@
     #internal;
     constructor(stream, underlyingSource) {
       this.#stream = stream;
-      // ensure per-stream internal storage exists
-      if (!stream[SYMBOLS.streamInternal]) stream[SYMBOLS.streamInternal] = {};
       this.#internal = stream[SYMBOLS.streamInternal];
       this.#internal.underlyingSource = underlyingSource || {};
     }
@@ -3382,6 +3380,11 @@
     }
 
     getReader(options = {}) {
+      // Defensive check: ensure streamInternal is initialized
+      if (!this[SYMBOLS.streamInternal]) {
+        throw new TypeError('ReadableStream is in an invalid state');
+      }
+
       if (this[SYMBOLS.streamInternal].reader) {
         throw new TypeError('ReadableStream is already locked to a reader');
       }
@@ -3407,6 +3410,9 @@
           }
 
           const s = stream[SYMBOLS.streamInternal];
+          if (!s) {
+            return Promise.reject(new TypeError('ReadableStream is in an invalid state'));
+          }
           if (s.state === 'errored') return Promise.reject(s.storedError);
           
           if (s.queue.length > 0) {
@@ -3432,6 +3438,7 @@
 
         #requestPull() {
           const s = stream[SYMBOLS.streamInternal];
+          if (!s) return; // Guard against undefined streamInternal
           if (!s.underlyingSource?.pull || s.pulling) {
             if (s.pulling) s.pullAgain = true;
             return;
@@ -3467,11 +3474,14 @@
         releaseLock() {
           if (this.#released) return;
           this.#released = true;
-          stream[SYMBOLS.streamInternal].reader = null;
+          if (stream[SYMBOLS.streamInternal]) {
+            stream[SYMBOLS.streamInternal].reader = null;
+          }
         }
 
         get closed() {
           const s = stream[SYMBOLS.streamInternal];
+          if (!s) return Promise.reject(new TypeError('ReadableStream is in an invalid state'));
           if (s.state === 'closed') return Promise.resolve();
           if (s.state === 'errored') return Promise.reject(s.storedError);
           
@@ -3491,6 +3501,9 @@
     }
 
     cancel(reason) {
+      if (!this[SYMBOLS.streamInternal]) {
+        return Promise.reject(new TypeError('ReadableStream is in an invalid state'));
+      }
       const s = this[SYMBOLS.streamInternal];
       if (s.state === 'closed') return Promise.resolve();
       if (s.state === 'errored') return Promise.reject(s.storedError);
@@ -3515,10 +3528,13 @@
     }
 
     get locked() {
-      return this[SYMBOLS.streamInternal].reader !== null;
+      return this[SYMBOLS.streamInternal] && this[SYMBOLS.streamInternal].reader !== null;
     }
 
     tee() {
+      if (!this[SYMBOLS.streamInternal]) {
+        throw new TypeError('ReadableStream is in an invalid state');
+      }
       if (this[SYMBOLS.streamInternal].state === 'errored') {
         throw new TypeError('Cannot tee an errored stream');
       }
@@ -3705,7 +3721,6 @@
     #internal;
     constructor(stream, underlyingSink) {
       this.#stream = stream;
-      if (!stream[SYMBOLS.streamInternal]) stream[SYMBOLS.streamInternal] = {};
       this.#internal = stream[SYMBOLS.streamInternal];
       this.#internal.underlyingSink = underlyingSink || {};
     }
