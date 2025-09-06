@@ -26,11 +26,6 @@
 import JavaScriptCore
 import NIOHTTP1
 
-// Reference-type accumulator used by stream controllers
-final class DataAccumulator: @unchecked Sendable {
-    var data: Data = Data()
-}
-
 @objc protocol JSURLSessionExport: JSExport {
     
     func shared() -> JSURLSession
@@ -75,13 +70,9 @@ final class DataAccumulator: @unchecked Sendable {
                 }
 
                 do {
-                    // Use a reference-type accumulator so controllers can safely append data
-                    let accumulator = DataAccumulator()
-
                     let streamController = StreamController(
                         context: context,
-                        progressHandler: progressHandler,
-                        accumulator: accumulator
+                        progressHandler: progressHandler
                     )
 
                     let responseHead: HTTPResponseHead

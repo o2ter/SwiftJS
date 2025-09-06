@@ -34,34 +34,27 @@ import AsyncHTTPClient
 /// Used for streaming methods that need to report progress
 final class StreamController: @unchecked Sendable {
     private let context: JSContext
-    private let progressHandler: JSValue?
-    private let accumulator: DataAccumulator
+    private let progressHandler: JSValue
     private let lock = NSLock()
 
-    init(context: JSContext, progressHandler: JSValue?, accumulator: DataAccumulator) {
+    init(context: JSContext, progressHandler: JSValue) {
         self.context = context
         self.progressHandler = progressHandler
-        self.accumulator = accumulator
     }
 
-    func enqueue(_ data: Data) {
+    func enqueue(_ chunk: Data) {
         lock.lock()
         defer { lock.unlock() }
 
-        accumulator.data.append(data)
-
         // Call progress handler if provided - ensure we call on the JSContext's thread
-        if let progressHandler = progressHandler, !data.isEmpty {
-            let chunk = data
-            DispatchQueue.main.async {
-                let uint8Array = JSValue.uint8Array(count: chunk.count, in: self.context) {
-                    buffer in
-                    chunk.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: chunk.count)
-                }
-                // Call progress handler with data chunk and completion status (false = not complete)
-                progressHandler.call(withArguments: [uint8Array, false])
-            }
+        guard !chunk.isEmpty else { return }
+        
+        let uint8Array = JSValue.uint8Array(count: chunk.count, in: self.context) {
+            buffer in
+            chunk.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: chunk.count)
         }
+        // Call progress handler with data chunk and completion status (false = not complete)
+        progressHandler.call(withArguments: [uint8Array, false])
     }
 
     func error(_ error: Error) {
@@ -69,14 +62,8 @@ final class StreamController: @unchecked Sendable {
     }
 
     func close() {
-        // Call progress handler with completion signal
-        if let progressHandler = progressHandler {
-            // Call with empty data and completion = true on JS thread
-            DispatchQueue.main.async {
-                let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
-                progressHandler.call(withArguments: [emptyArray, true])
-            }
-        }
+        let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
+        progressHandler.call(withArguments: [emptyArray, true])
     }
 }
 
@@ -150,7 +137,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         
         // Stream response body in a detached task to avoid data races
         let controller = streamController
-        Task.detached { @Sendable in
+        Task.detached {
             do {
                 for try await buffer in response.body {
                     let data = Data(buffer: buffer)
