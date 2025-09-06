@@ -259,12 +259,17 @@ final class FetchRedirectTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Redirect chain test")
         
         let script = """
-            // Test basic redirect following with a simple redirect
-            // Since external redirect services may be unreliable, focus on testing 
-            // that the redirect option is parsed and the request completes
+            // Test following a chain of multiple redirects (3 redirects total)
+            // Create a chain: redirect-to -> redirect-to -> redirect-to -> final destination
             const startTime = Date.now();
             
-            fetch('https://postman-echo.com/redirect-to?url=https://postman-echo.com/get', {
+            // Build the redirect chain URL
+            const finalUrl = 'https://postman-echo.com/get';
+            const redirect2 = 'https://postman-echo.com/redirect-to?url=' + encodeURIComponent(finalUrl);
+            const redirect1 = 'https://postman-echo.com/redirect-to?url=' + encodeURIComponent(redirect2);
+            const chainStartUrl = 'https://postman-echo.com/redirect-to?url=' + encodeURIComponent(redirect1);
+            
+            fetch(chainStartUrl, {
                 redirect: 'follow'
             })
             .then(response => {
@@ -275,7 +280,8 @@ final class FetchRedirectTests: XCTestCase {
                     finalUrl: response.url,
                     redirected: response.redirected,
                     duration: endTime - startTime,
-                    requestCompleted: response.status >= 200 && response.status < 300
+                    reachedFinalDestination: response.status === 200 && response.url.includes('/get'),
+                    chainStartUrl: chainStartUrl
                 });
             })
             .catch(error => {
@@ -288,17 +294,22 @@ final class FetchRedirectTests: XCTestCase {
             let result = args[0]
             if result["success"].boolValue == true {
                 let status = Int(result["finalStatus"].numberValue ?? 0)
+                XCTAssertEqual(status, 200, "Should get 200 at end of redirect chain")
                 XCTAssertTrue(
-                    result["requestCompleted"].boolValue ?? false,
-                    "Request should complete successfully (2xx status)")
+                    result["reachedFinalDestination"].boolValue ?? false,
+                    "Should reach final destination (/get endpoint) after following redirect chain")
                 XCTAssertTrue(
-                    status >= 200 && status < 300,
-                    "Should get successful status code, got \(status)")
-
-                // Test that duration is reasonable (not too fast, indicating no network call)
+                    result["redirected"].boolValue ?? false,
+                    "Response should indicate it was redirected through the chain")
+                
+                // Verify the final URL is the expected destination, not an intermediate redirect
+                let finalUrl = result["finalUrl"].toString()
+                XCTAssertTrue(finalUrl.contains("/get"), "Final URL should be the /get endpoint")
+                XCTAssertFalse(finalUrl.contains("redirect-to"), "Final URL should not contain redirect-to")
+                
+                // Test that duration indicates multiple network hops
                 let duration = result["duration"].numberValue ?? 0
-                XCTAssertGreaterThan(
-                    duration, 10, "Request should take some time to indicate real network call")
+                XCTAssertGreaterThan(duration, 50, "Redirect chain should take longer than single request")
             } else {
                 XCTAssertTrue(true, "Network test skipped: \(result["error"].toString())")
             }
@@ -344,15 +355,13 @@ final class FetchRedirectTests: XCTestCase {
             let result = args[0]
             if result["success"].boolValue == true {
                 let status = Int(result["finalStatus"].numberValue ?? 0)
-                // Accept either successful redirect (200) or external service changes (404)
-                if status == 200 {
-                    XCTAssertEqual(status, 200, "Should complete redirect successfully")
-                } else {
-                    // External service may have changed - accept 404 as a known service behavior change
-                    XCTAssertTrue(
-                        status == 404,
-                        "External service behavior: expected 200 or 404, got \(status)")
-                }
+                XCTAssertEqual(status, 200, "Should complete redirect successfully")
+                XCTAssertTrue(
+                    result["redirected"].boolValue ?? false,
+                    "Response should indicate it was redirected")
+                XCTAssertTrue(
+                    result["methodPreserved"].boolValue ?? false,
+                    "Should reach GET endpoint after POST redirect")
                 // POST redirects typically become GET requests, which is standard behavior
             } else {
                 XCTAssertTrue(true, "Network test skipped: \(result["error"].toString())")
