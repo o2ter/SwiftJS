@@ -229,7 +229,7 @@ final class FetchTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testResponseJSON() {
@@ -264,7 +264,7 @@ final class FetchTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testResponseClone() {
@@ -309,7 +309,7 @@ final class FetchTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testResponseBodyStream() {
@@ -666,7 +666,7 @@ final class FetchTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 15.0)
     }
 
     func testProgressiveDownloadInterruption() {
@@ -905,7 +905,7 @@ final class FetchTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 15.0)
     }
 
     // MARK: - Error Handling Tests
@@ -941,7 +941,7 @@ final class FetchTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testFetchAbortController() {

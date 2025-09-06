@@ -105,7 +105,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 5.0)
     }
     
     func testCorruptedBinaryData() {
@@ -188,7 +188,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 5.0)
     }
     
     // MARK: - Connection Error Tests
@@ -326,7 +326,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
     
     func testStreamErrorPropagationChain() {
         let expectation = XCTestExpectation(description: "Stream error propagation chain")
-        
+
         let script = """
             // Create a chain of transforms where errors can propagate
             const sourceStream = new ReadableStream({
@@ -405,7 +405,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testMultipleStreamErrorRecovery() {
@@ -520,7 +520,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 15.0)
     }
     
     // MARK: - Resource Limit Tests

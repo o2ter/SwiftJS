@@ -340,3 +340,57 @@ Understanding why some tests pass while others fail reveals the parsing issue:
 - Always wrap object literals in parentheses when they're the main return value
 - Particularly important in test scripts that return result objects for assertion
 - Use `({ ... })` pattern consistently in all test object returns
+
+### **CRITICAL:** Test Timeout Requirements
+**All asynchronous tests MUST have timeout parameters to prevent hanging:**
+
+```swift
+// ❌ WRONG - missing timeout can cause indefinite hanging
+wait(for: [expectation])
+
+// ✅ CORRECT - always include appropriate timeout
+wait(for: [expectation], timeout: 10.0)
+```
+
+**Timeout Guidelines by Test Type:**
+- **5 seconds**: Quick data parsing, simple operations, basic API calls
+- **10 seconds**: Standard network requests, stream operations, most async tests
+- **15 seconds**: Complex stream processing, error recovery, multi-step operations
+- **30 seconds**: Concurrent connections, resource-intensive operations
+- **60 seconds**: Large file uploads, performance-critical operations
+
+**Why timeouts are essential:**
+- JavaScript async operations can hang indefinitely due to network issues
+- Tests without timeouts block the entire test suite
+- Debugging becomes impossible when tests hang without feedback
+- CI/CD systems may timeout at the process level, giving less useful error information
+
+**Common timeout scenarios:**
+- Network requests to unreachable endpoints
+- Stream operations waiting for data that never arrives
+- Timer-based operations with incorrect JavaScript logic
+- Promise chains with unhandled rejections
+- Event listeners that are never triggered
+
+**Timeout detection patterns:**
+Use grep to find missing timeouts:
+```bash
+# Find all wait calls without timeout
+grep -r "wait(for: \[expectation\])$" Tests/
+
+# Verify all have timeouts
+grep -r "wait(for:.*timeout:" Tests/
+```
+
+**Bulk timeout fixes:**
+For files with many missing timeouts, use sed for bulk replacement:
+```bash
+sed -i '' 's/wait(for: \[expectation\])$/wait(for: [expectation], timeout: 10.0)/g' filename.swift
+```
+
+**Testing best practices:**
+- Always add timeouts when creating new async tests
+- Review existing tests for missing timeouts during refactoring
+- Use appropriate timeout values based on operation complexity
+- Consider network conditions and CI environment performance
+- Prefer shorter timeouts for faster feedback, but ensure reliability

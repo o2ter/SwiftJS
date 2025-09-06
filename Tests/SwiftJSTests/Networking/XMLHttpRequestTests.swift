@@ -236,7 +236,7 @@ final class XMLHttpRequestTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Response Header Tests
@@ -547,7 +547,7 @@ final class XMLHttpRequestTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testXMLHttpRequestAbort() {

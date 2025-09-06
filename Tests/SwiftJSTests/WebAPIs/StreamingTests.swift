@@ -122,7 +122,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testReadableStreamTee() {
@@ -194,7 +194,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - WritableStream Tests
@@ -257,7 +257,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - TransformStream Tests
@@ -354,7 +354,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - pipeTo Method Tests
@@ -411,7 +411,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testPipeToWithLargeData() {
@@ -460,7 +460,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testPipeToErrorPropagation() {
@@ -505,7 +505,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testClearTimeout() {
@@ -607,7 +607,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testPipeThroughComplexPipeline() {
@@ -681,7 +681,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Pipe Options Tests
@@ -744,7 +744,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testPipeToWithPreventCloseOption() {
@@ -794,7 +794,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Response Body Stream Tests
@@ -853,7 +853,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testResponseCloneWithStream() {
@@ -889,7 +889,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testResponsePipeThrough() {
@@ -943,7 +943,7 @@ final class StreamingTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Error Handling Tests
@@ -988,7 +988,7 @@ final class StreamingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Advanced Error Handling Tests
@@ -1068,7 +1068,7 @@ final class StreamingTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
 
     func testConcurrentStreamErrors() {
@@ -1157,7 +1157,7 @@ final class StreamingTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
 
     func testMemoryPressureStreaming() {
@@ -1412,7 +1412,7 @@ final class StreamingTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation])
+        wait(for: [expectation], timeout: 10.0)
     }
 
     // MARK: - Type Validation Tests
