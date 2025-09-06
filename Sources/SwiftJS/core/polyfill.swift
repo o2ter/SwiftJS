@@ -310,6 +310,7 @@ extension SwiftJS {
         self.globalObject["__APPLE_SPEC__"] = [
             "crypto": .init(JSCrypto(), in: self),
             "processInfo": .init(JSProcessInfo(), in: self),
+            "processControl": .init(JSProcessControl(), in: self),
             "deviceInfo": .init(JSDeviceInfo(), in: self),
             "bundleInfo": .init(JSBundleInfo.main, in: self),
             "FileSystem": .init(JSFileSystem.self, in: self),

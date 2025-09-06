@@ -35,19 +35,17 @@
       return __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(directory);
     }
 
-    // Standard Node.js process.exit() - sets global flag and throws uncatchable error
+    // Standard Node.js process.exit() - calls native Swift implementation
     exit(code = 0) {
-      // Set global exit flag that Swift can check
-      globalThis.__SWIFTJS_EXIT_CODE__ = code;
-      // Throw an error that cannot be caught by user code
-      const exitError = new Error('PROCESS_EXIT');
-      exitError.name = 'ProcessExit';
-      exitError.code = code;
+      // Validate exit code
+      const exitCode = parseInt(code, 10);
+      if (isNaN(exitCode)) {
+        throw new TypeError('Exit code must be a number');
+      }
 
-      // Use setTimeout to throw the error async, making it uncatchable
-      setTimeout(() => {
-        throw exitError;
-      }, 0);
+      // Call the native Swift implementation directly
+      // This will terminate the process cleanly without exceptions or global pollution
+      __APPLE_SPEC__.processControl.exit(exitCode);
     }
   };
 

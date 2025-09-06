@@ -107,19 +107,10 @@ func main() {
     // Execute the JavaScript code
     let result = context.evaluateScript(sourceCode)
     
-    // Check if there was an exception (including process.exit)
+    // Check if there was an exception
     let exception = context.exception
     if !exception.isUndefined {
-        // Check if this is a process.exit() call
-        let exceptionName = exception["name"]
-        if exceptionName.toString() == "ProcessExit" {
-            let exitCodeValue = exception["code"]
-            let exitCode = Int32(exitCodeValue.numberValue ?? 0)
-            print("Script called process.exit(\(exitCode))")
-            exit(exitCode)
-        }
-
-        // Handle other exceptions
+        // Handle JavaScript exceptions
         let stack = exception["stack"]
         if !stack.isUndefined {
             fputs("JavaScript Error:\n\(stack.toString())\n", stderr)
@@ -153,14 +144,6 @@ func main() {
     var hasHadActivity = false
 
     while !shouldExit {
-        // Check for process.exit() call
-        let exitCodeGlobal = context.globalObject["__SWIFTJS_EXIT_CODE__"]
-        if !exitCodeGlobal.isUndefined {
-            let exitCode = Int32(exitCodeGlobal.numberValue ?? 0)
-            print("Script called process.exit(\(exitCode))")
-            exit(exitCode)
-        }
-
         // Run the loop for a short period
         let ranWork = runLoop.run(mode: .default, before: Date().addingTimeInterval(0.1))
         
