@@ -586,7 +586,7 @@
         } catch (error) {
           // In browsers, listener errors don't stop other listeners from executing
           // and don't propagate - they're usually logged to console
-          console.error('Error in event listener:', error);
+          console.error(error);
         }
       }
 
