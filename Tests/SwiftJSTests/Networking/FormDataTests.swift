@@ -363,7 +363,7 @@ final class FormDataTests: XCTestCase {
                 async function testFileStreaming() {
                     try {
                         // Create a temporary file using FileSystem.temp
-                        const tempDir = FileSystem.temp.createDirectory();
+                        const tempDir = FileSystem.temp;
                         const filePath = Path.join(tempDir, 'streaming-test.txt');
                         
                         // Create test content
@@ -378,8 +378,8 @@ final class FormDataTests: XCTestCase {
                         formData.append('file', file);
                         formData.append('description', 'Streaming test file');
                         
-                        // Use httpbin.org echo service to test upload
-                        const response = await fetch('https://httpbin.org/post', {
+                        // Use a simple POST endpoint to test upload
+                        const response = await fetch('https://postman-echo.com/post', {
                             method: 'POST',
                             body: formData
                         });
@@ -391,8 +391,7 @@ final class FormDataTests: XCTestCase {
                         const responseData = await response.json();
                         
                         // Cleanup
-                        FileSystem.removeFile(filePath);
-                        FileSystem.removeDirectory(tempDir);
+                        FileSystem.remove(filePath);
                         
                         // Verify the file was uploaded and echoed back
                         return {
@@ -430,7 +429,7 @@ final class FormDataTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation], timeout: 30.0)
+        wait(for: [expectation], timeout: 60.0)
     }
 
     func testFileStreamingWithXMLHttpRequest() {
@@ -439,7 +438,7 @@ final class FormDataTests: XCTestCase {
         let script = """
                 function testXHRFileStreaming() {
                     // Create a temporary file using FileSystem.temp
-                    const tempDir = FileSystem.temp.createDirectory();
+                    const tempDir = FileSystem.temp;
                     const filePath = Path.join(tempDir, 'xhr-streaming-test.txt');
                     
                     // Create test content
@@ -464,8 +463,7 @@ final class FormDataTests: XCTestCase {
                         if (xhr.readyState === 4) {
                             try {
                                 // Cleanup
-                                FileSystem.removeFile(filePath);
-                                FileSystem.removeDirectory(tempDir);
+                                FileSystem.remove(filePath);
                                 
                                 if (xhr.status === 200) {
                                     const responseData = JSON.parse(xhr.responseText);
@@ -491,13 +489,12 @@ final class FormDataTests: XCTestCase {
                     xhr.onerror = function() {
                         // Cleanup on error
                         try {
-                            FileSystem.removeFile(filePath);
-                            FileSystem.removeDirectory(tempDir);
+                            FileSystem.remove(filePath);
                         } catch (e) {}
                         testCompleted({ success: false, error: 'Network error' });
                     };
                     
-                    xhr.open('POST', 'https://httpbin.org/post');
+                    xhr.open('POST', 'https://postman-echo.com/post');
                     xhr.send(formData);
                 }
                 
@@ -522,6 +519,6 @@ final class FormDataTests: XCTestCase {
         }
 
         context.evaluateScript(script)
-        wait(for: [expectation], timeout: 30.0)
+        wait(for: [expectation], timeout: 60.0)
     }
 }

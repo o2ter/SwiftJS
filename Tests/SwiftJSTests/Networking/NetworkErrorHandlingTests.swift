@@ -319,7 +319,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation], timeout: 10.0)
+        wait(for: [expectation], timeout: 30.0)
     }
     
     // MARK: - Stream Error Recovery Tests
@@ -405,7 +405,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
         }
         
         context.evaluateScript(script)
-        wait(for: [expectation], timeout: 10.0)
+        wait(for: [expectation], timeout: 30.0)
     }
     
     func testMultipleStreamErrorRecovery() {

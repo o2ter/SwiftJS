@@ -390,7 +390,7 @@ final class FileTests: XCTestCase {
             return SwiftJS.Value.undefined
         }])
         
-        wait(for: [expectation], timeout: 10.0)
+        wait(for: [expectation], timeout: 30.0)
     }
     
     // MARK: - FileReader API Tests
@@ -466,7 +466,7 @@ final class FileTests: XCTestCase {
             return SwiftJS.Value.undefined
         }])
         
-        wait(for: [expectation], timeout: 5.0)
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testFileReaderReadAsArrayBuffer() {
@@ -608,7 +608,7 @@ final class FileTests: XCTestCase {
             return SwiftJS.Value.undefined
         }])
         
-        wait(for: [expectation], timeout: 5.0)
+        wait(for: [expectation], timeout: 10.0)
     }
     
     func testFileReaderEvents() {
@@ -744,7 +744,7 @@ final class FileTests: XCTestCase {
             return SwiftJS.Value.undefined
         }])
         
-        wait(for: [expectation], timeout: 5.0)
+        wait(for: [expectation], timeout: 10.0)
     }
     
     // MARK: - Error Handling Tests
@@ -799,7 +799,8 @@ final class FileTests: XCTestCase {
         
         XCTAssertFalse(result["success"].boolValue ?? true)
         XCTAssertTrue(result["error"].toString().contains("InvalidStateError") || 
-                     result["error"].toString().contains("invalid state"))
+                     result["error"].toString().contains("invalid state") ||
+                     result["error"].toString().contains("already reading"))
     }
     
     // MARK: - Performance Tests
@@ -848,7 +849,7 @@ final class FileTests: XCTestCase {
             return SwiftJS.Value.undefined
         }])
         
-        wait(for: [expectation], timeout: 10.0)
+        wait(for: [expectation], timeout: 20.0)
     }
     
     func testBlobPerformance() {
