@@ -99,7 +99,16 @@ final class NIOHTTPClient: @unchecked Sendable {
     
     private init() {
         self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
-        self.httpClient = HTTPClient(eventLoopGroupProvider: .shared(eventLoopGroup))
+        
+        // Configure HTTP client to NOT follow redirects automatically
+        // This allows our JavaScript fetch implementation to handle redirects according to the Fetch API spec
+        var configuration = HTTPClient.Configuration()
+        configuration.redirectConfiguration = .disallow
+
+        self.httpClient = HTTPClient(
+            eventLoopGroupProvider: .shared(eventLoopGroup),
+            configuration: configuration
+        )
     }
     
     deinit {

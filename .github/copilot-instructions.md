@@ -257,6 +257,14 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Don't rely on external documentation without verification - JavaScriptCore has unique behaviors
 - Document any discrepancies between expected and actual behavior
 
+### **CRITICAL:** Test Integrity Principle
+**NEVER use fallbacks or permissive assertions to bypass test failures:**
+- When tests fail, investigate and fix the root cause (broken endpoints, implementation bugs, incorrect assumptions)
+- Don't add `|| acceptableStatus` conditions unless explicitly testing error scenarios
+- Fallback logic in tests masks real issues and creates technical debt
+- Every test assertion should validate actual functionality, not work around problems
+- See "Critical Testing Patterns" section for detailed examples and anti-patterns
+
 ### **CRITICAL:** Documentation Update Requirements
 **MANDATORY:** Always update documentation when making API changes:
 
@@ -376,6 +384,24 @@ When running any command or task as an AI agent:
    - **Why wrong:** Adds complexity and potential deadlocks for thread-safe operations
    - **✅ Correct:** Use direct access for thread-safe operations, locks where needed
 
+### Test Quality Anti-Patterns 
+**These are real mistakes made during redirect testing - DO NOT REPEAT:**
+
+6. **❌ NEVER add fallback logic to bypass test failures**
+   - **Mistake:** Adding `if status == 404 { XCTAssertTrue(true, "Accept 404 as service change") }`
+   - **Why wrong:** Masks real bugs, makes tests meaningless, hides broken functionality
+   - **✅ Correct:** Fix the root cause - use working endpoints, fix implementation bugs, update test data
+
+7. **❌ NEVER accept error status codes as "normal" without investigation**
+   - **Mistake:** Treating 404 responses as "external service changes" instead of broken test endpoints
+   - **Why wrong:** Tests become unreliable, real issues go undetected, technical debt accumulates
+   - **✅ Correct:** Investigate why tests fail, use reliable endpoints, validate actual functionality
+
+8. **❌ NEVER use permissive assertions that always pass**
+   - **Mistake:** Using `XCTAssertTrue(status == 200 || status == 404, "Accept any result")`
+   - **Why wrong:** Tests provide no validation, regressions go unnoticed, false confidence in code quality
+   - **✅ Correct:** Test specific expected behavior with precise assertions
+
 ### General Architecture Anti-Patterns
 6. **❌ NEVER overcomplicate simple paired relationships**
    - **Mistake:** Building tracking systems for 1:1 relationships that already exist
@@ -422,6 +448,54 @@ When implementing or modifying Blob, File, and HTTP operations, follow these pri
 **FUTURE DEVELOPERS:** If you find yourself calling .arrayBuffer() in streaming code, you're probably doing it wrong. Use .stream() and process chunks.
 
 ## Critical Testing Patterns
+
+### **CRITICAL:** Never Use Fallbacks to Bypass Test Failures
+**Always fix the root cause instead of adding fallback logic that masks real issues:**
+
+**❌ WRONG - Adding fallbacks that hide broken functionality:**
+```swift
+// BAD: Accepting 404 as "okay" when testing redirects
+if status == 200 {
+    XCTAssertEqual(status, 200, "Should get 200 after redirect")
+} else {
+    // External service may have changed - accept 404 as okay
+    XCTAssertTrue(status == 404, "Accept 404 as service change")
+}
+```
+
+**✅ CORRECT - Fix the actual problem:**
+```swift
+// GOOD: Use working endpoints and expect correct behavior
+let status = Int(result["finalStatus"].numberValue ?? 0)
+XCTAssertEqual(status, 200, "Should get 200 after redirect")
+XCTAssertTrue(result["redirected"].boolValue ?? false, "Should be marked as redirected")
+```
+
+**Why fallbacks are dangerous:**
+- **Hide real bugs**: Test passes even when core functionality is broken
+- **Reduce test reliability**: Tests become meaningless if they accept any result
+- **Mask API changes**: External service issues get treated as "normal" instead of being investigated
+- **Create technical debt**: Future developers don't know what the test actually validates
+- **Prevent regression detection**: Broken features go unnoticed because tests still pass
+
+**When encountering test failures:**
+1. **Investigate the root cause** - why is the test getting unexpected results?
+2. **Fix the implementation** - if there's a bug in the code, fix it
+3. **Update the test data** - if external services changed, use working endpoints
+4. **Improve error handling** - if it's a legitimate error case, test it properly
+5. **Never add "|| acceptable_error_status"** - this always indicates a deeper problem
+
+**Real-world example from redirect testing:**
+- **Problem**: Tests failing because `/redirect/3` endpoint returns 404
+- **Bad solution**: Accept 404 as "external service change" 
+- **Good solution**: Use working `/redirect-to?url=...` endpoint instead
+- **Result**: Tests now validate actual redirect behavior instead of masking broken endpoints
+
+**Exception**: The only time to accept multiple status codes is when **explicitly testing error handling**:
+```swift
+// This is OK - we're specifically testing error scenarios
+XCTAssertTrue([400, 404, 500].contains(status), "Should return client or server error")
+```
 
 ### Performance Testing with `measure` Blocks
 When using XCTest `measure` blocks, scripts are executed multiple times for performance measurement. This creates important constraints:

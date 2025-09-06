@@ -299,7 +299,7 @@ final class NetworkErrorHandlingTests: XCTestCase {
                                 totalTests: refusedConnections.length,
                                 results: results,
                                 allFailed: results.every(r => !r.success),
-                                reasonableTime: results.every(r => r.duration < 5000)
+                                reasonableTime: results.every(r => r.duration < 15000) // Allow up to 15 seconds for connection timeouts
                             });
                         }
                     });

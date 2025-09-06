@@ -2856,8 +2856,59 @@
         } else if (request.redirect === 'manual') {
           // Return the redirect response without following it
           return response;
+        } else if (request.redirect === 'follow') {
+          // Follow the redirect
+          const locationHeader = response.headers.get('Location') || response.headers.get('location');
+          if (locationHeader) {
+            // Resolve the redirect URL - simple implementation for absolute and relative URLs
+            let redirectUrl;
+            if (locationHeader.startsWith('http://') || locationHeader.startsWith('https://')) {
+              // Absolute URL
+              redirectUrl = locationHeader;
+            } else {
+              // For relative URLs, create a simple URL resolver
+              // This handles the most common cases for redirects
+              if (locationHeader.startsWith('/')) {
+                // Absolute path - extract protocol and host from original URL
+                const match = request.url.match(/^(https?:\/\/[^\/]+)/);
+                redirectUrl = match ? match[1] + locationHeader : locationHeader;
+              } else {
+                // Relative path - this is less common for redirects, but handle it
+                const baseUrl = request.url.replace(/\/[^\/]*$/, '/');
+                redirectUrl = baseUrl + locationHeader;
+              }
+            }
+
+            // Create a new request for the redirect
+            // According to fetch spec, POST/PUT/PATCH redirects to GET for 301/302/303
+            let redirectMethod = request.method;
+            if ((response.status === 301 || response.status === 302 || response.status === 303) &&
+              (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+              redirectMethod = 'GET';
+            }
+
+            const redirectRequest = new Request(redirectUrl, {
+              method: redirectMethod,
+              headers: request.headers,
+              redirect: 'follow',
+              signal: request.signal,
+              // Don't include body for GET redirects
+              body: redirectMethod === 'GET' ? null : request.body
+            });
+
+            // Recursively fetch the redirect target
+            const redirectResponse = await fetch(redirectRequest);
+
+            // Create a new response with the redirected flag set
+            return new Response(redirectResponse.body, {
+              status: redirectResponse.status,
+              statusText: redirectResponse.statusText,
+              headers: redirectResponse.headers,
+              url: redirectResponse.url,
+              redirected: true
+            });
+          }
         }
-        // For 'follow' (default), the underlying HTTP client should handle it automatically
       }
 
       return response;
