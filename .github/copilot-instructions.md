@@ -244,6 +244,54 @@ When running any command or task as an AI agent:
 - Ask for user confirmation before attempting alternative approaches
 - **Never run alternative commands while a failed task is still running or in an unknown state**
 
+## **CRITICAL:** Common AI Agent Mistakes to Avoid
+
+### Network Request Tracking Implementation Mistakes
+**These are real mistakes made during SwiftJSRunner network tracking implementation - DO NOT REPEAT:**
+
+1. **❌ NEVER expose internal tracking to JavaScript global objects**
+   - **Mistake:** Adding `_swiftJSContext` to `__APPLE_SPEC__` global object for internal tracking
+   - **Why wrong:** Pollutes JavaScript global namespace with implementation details
+   - **✅ Correct:** Keep all tracking purely on Swift side using instance references
+
+2. **❌ NEVER use complex static tracking systems when simple instance references work**
+   - **Mistake:** Creating `NetworkRequestTracker` class with static dictionaries and `ObjectIdentifier` keys
+   - **Why wrong:** Overcomplicated, concurrency issues, unnecessary abstraction
+   - **✅ Correct:** Each `JSURLSession` instance holds direct reference to its `SwiftJS.Context`
+
+3. **❌ NEVER use static variables for per-instance state**
+   - **Mistake:** Using `private static var swiftJSContext: SwiftJS.Context?` in JSURLSession
+   - **Why wrong:** Multiple SwiftJS instances will interfere with each other
+   - **✅ Correct:** Use instance variables: `private let swiftJSContext: SwiftJS.Context`
+
+4. **❌ NEVER misunderstand JSExport interface requirements**
+   - **Mistake:** Adding `static func shared()` to protocol when JavaScript expects instance method
+   - **Why wrong:** JavaScript calls `URLSession.shared()` on the exposed instance, not class
+   - **✅ Correct:** Add `func shared() -> JSURLSession { return self }` as instance method
+
+5. **❌ NEVER use MainActor when unnecessary**
+   - **Mistake:** Wrapping simple property access in `await MainActor.run { }`
+   - **Why wrong:** Adds complexity and potential deadlocks for thread-safe operations
+   - **✅ Correct:** Use direct access for thread-safe operations, locks where needed
+
+### General Architecture Anti-Patterns
+6. **❌ NEVER overcomplicate simple paired relationships**
+   - **Mistake:** Building tracking systems for 1:1 relationships that already exist
+   - **Why wrong:** Each SwiftJS instance already has its Context and JSContext paired
+   - **✅ Correct:** Use existing relationships instead of creating new tracking mechanisms
+
+7. **❌ NEVER ignore existing JavaScript API expectations**
+   - **Mistake:** Changing the JavaScript interface without checking the polyfill code
+   - **Why wrong:** Breaking existing JavaScript code that expects specific API patterns
+   - **✅ Correct:** Always check how JavaScript polyfill uses the exposed APIs first
+
+### Key Lessons
+- **KISS Principle:** Keep implementations as simple as possible - if it feels complex, you're probably overengineering
+- **Check existing patterns:** Look at how timers are tracked before inventing new tracking systems
+- **Verify JavaScript contracts:** Always check `polyfill.js` to understand expected API interfaces
+- **Prefer instance state:** Use instance variables over static tracking whenever possible
+- **Avoid global pollution:** Never expose internal implementation details to JavaScript globals
+
 ## Streaming Architecture Guidelines
 
 ### **CRITICAL:** Streaming Implementation Principles
