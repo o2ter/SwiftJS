@@ -2327,9 +2327,17 @@
       
       // Validate method
       const method = (init.method || 'GET').toUpperCase();
-      const validMethods = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT', 'OPTIONS', 'TRACE', 'PATCH'];
-      if (!validMethods.includes(method)) {
-        throw new TypeError(`'${init.method}' HTTP method is unsupported.`);
+
+      // Check for forbidden methods (case-insensitive)
+      const forbiddenMethods = ['CONNECT', 'TRACE', 'TRACK'];
+      if (forbiddenMethods.includes(method)) {
+        throw new TypeError(`'${init.method}' HTTP method is forbidden.`);
+      }
+
+      // Validate that method is a valid HTTP token
+      // HTTP token chars: A-Z, a-z, 0-9, !, #, $, %, &, ', *, +, -, ., ^, _, `, |, ~
+      if (!/^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/.test(method)) {
+        throw new TypeError(`'${init.method}' is not a valid HTTP method.`);
       }
       
       // Validate that GET/HEAD requests don't have body
