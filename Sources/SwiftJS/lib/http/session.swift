@@ -41,10 +41,10 @@ import NIOHTTP1
 @objc final class JSURLSession: NSObject, JSURLSessionExport, @unchecked Sendable {
     
     // Store reference to SwiftJS context for network tracking
-    private let swiftJSContext: SwiftJS.Context
+    private let context: SwiftJS.Context
 
     init(context: SwiftJS.Context) {
-        self.swiftJSContext = context
+        self.context = context
         super.init()
     }
 
@@ -64,11 +64,11 @@ import NIOHTTP1
         return JSValue(newPromiseIn: context) { resolve, reject in
             Task {
                 // Start network request tracking
-                let networkId = self.swiftJSContext.startNetworkRequest()
+                let networkId = self.context.startNetworkRequest()
 
                 defer {
                     // End network request tracking
-                    self.swiftJSContext.endNetworkRequest(networkId)
+                    self.context.endNetworkRequest(networkId)
                 }
 
                 do {
