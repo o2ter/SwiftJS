@@ -33,7 +33,19 @@
     }
 
     chdir(directory) {
-      return __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(directory);
+      if (arguments.length === 0) {
+        throw new TypeError("process.chdir() requires a directory argument");
+      }
+      if (directory == null) {
+        throw new TypeError("process.chdir() path must be a string");
+      }
+      
+      const path = String(directory);
+      const success = __APPLE_SPEC__.FileSystem.changeCurrentDirectoryPath(path);
+      if (!success) {
+        throw new Error(`chdir: ENOENT: no such file or directory, chdir '${path}'`);
+      }
+      return success;
     }
 
     // Standard Node.js process.exit() - calls native Swift implementation
@@ -1322,6 +1334,13 @@
     #filePath; // For files created from FileSystemFileHandle
 
     constructor(parts, name, options = {}) {
+      if (arguments.length < 2) {
+        throw new TypeError(`Failed to construct 'File': 2 arguments required, but only ${arguments.length} present.`);
+      }
+      if (typeof name !== 'string') {
+        throw new TypeError("Failed to construct 'File': parameter 2 is not of type 'string'.");
+      }
+      
       super(parts, options);
       this.#name = String(name || '');
       this.#lastModified = options.lastModified || Date.now();
@@ -2280,6 +2299,11 @@
     #bodyUsed = false;
 
     constructor(input, init = {}) {
+      // Validate required URL argument
+      if (arguments.length === 0) {
+        throw new TypeError("Failed to construct 'Request': 1 argument required, but only 0 present.");
+      }
+      
       if (input instanceof Request) {
         this.#copyFromRequest(input);
       } else {
@@ -2300,7 +2324,20 @@
 
     #initializeFromUrl(url, init) {
       this.#url = url;
-      this.#method = (init.method || 'GET').toUpperCase();
+      
+      // Validate method
+      const method = (init.method || 'GET').toUpperCase();
+      const validMethods = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT', 'OPTIONS', 'TRACE', 'PATCH'];
+      if (!validMethods.includes(method)) {
+        throw new TypeError(`'${init.method}' HTTP method is unsupported.`);
+      }
+      
+      // Validate that GET/HEAD requests don't have body
+      if ((method === 'GET' || method === 'HEAD') && init.body) {
+        throw new TypeError(`Request with GET/HEAD method cannot have body.`);
+      }
+      
+      this.#method = method;
       this.#headers = new Headers(init.headers);
       this.#body = init.body || null;
       this[SYMBOLS.requestOriginalBody] = init.body || null; // Store original body
@@ -2408,8 +2445,14 @@
     #bodyUsed;
 
     constructor(body, init = {}) {
+      // Validate status code
+      const status = init.status !== undefined ? init.status : 200;
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw new RangeError(`Invalid status code: ${status}`);
+      }
+      
       this.#originalBody = body || null;
-      this.#status = init.status || 200;
+      this.#status = status;
       this.#statusText = init.statusText !== undefined ? init.statusText : getStatusText(this.#status);
       this.#headers = new Headers(init.headers);
       this.#url = init.url || '';
@@ -2958,6 +3001,10 @@
     }
 
     append(name, value) {
+      if (arguments.length < 2) {
+        throw new TypeError(`Failed to execute 'append' on 'URLSearchParams': 2 arguments required, but only ${arguments.length} present.`);
+      }
+      
       const key = String(name);
       const val = String(value);
       this.#entries.push([key, val]);
@@ -3043,6 +3090,10 @@
     }
 
     append(name, value, filename) {
+      if (arguments.length < 2) {
+        throw new TypeError(`Failed to execute 'append' on 'FormData': 2 arguments required, but only ${arguments.length} present.`);
+      }
+      
       const key = String(name);
       if (!this[SYMBOLS.formDataData].has(key)) {
         this[SYMBOLS.formDataData].set(key, []);
@@ -3094,6 +3145,10 @@
     }
 
     set(name, value, filename) {
+      if (arguments.length < 2) {
+        throw new TypeError(`Failed to execute 'set' on 'FormData': 2 arguments required, but only ${arguments.length} present.`);
+      }
+      
       const key = String(name);
       this[SYMBOLS.formDataData].delete(key);
       this.append(key, value, filename);
