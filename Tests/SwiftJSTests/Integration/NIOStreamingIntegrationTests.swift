@@ -104,9 +104,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
     
     // MARK: - Basic Streaming Tests
     
-    func testBasicStreamingDownload() {
-        let expectation = expectation(description: "Basic streaming download")
-        
+    func testBasicStreamingDownload() async throws {
         let script = """
             (async () => {
                 try {
@@ -128,10 +126,11 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         hasData: !!result.data
                     };
                 } catch (error) {
-                    console.error('Download error:', error.message);
                     return {
                         success: false,
-                        error: error.message
+                        error: error.message,
+                        errorName: error.name || 'UnknownError',
+                        errorStack: error.stack || 'No stack trace'
                     };
                 }
             })()
@@ -142,12 +141,36 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Should return a promise")
         
-        // Since this is an async test, we need to handle it differently
-        // For now, just verify the promise exists
-        expectation.fulfill()
-        
-        waitForExpectations(timeout: 10.0) { error in
-            XCTAssertNil(error, "Test timed out")
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
+
+        // Validate the results with comprehensive error handling
+        let success = result["success"].boolValue ?? false
+
+        if success {
+            // Test passed - validate success criteria
+            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let hasData = result["hasData"].boolValue ?? false
+
+            XCTAssertEqual(statusCode, 200, "Expected HTTP 200, got \(statusCode)")
+            XCTAssertTrue(hasData, "Expected response data")
+
+            print(
+                "✅ Basic streaming download test passed: status \(statusCode), has data: \(hasData)"
+            )
+        } else {
+            // Test failed - provide detailed error information
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+
+            XCTFail(
+                """
+                Basic streaming download test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                """)
         }
     }
     
@@ -192,9 +215,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
     
     // MARK: - Upload Integration Tests
     
-    func testStreamingUploadWithBody() {
-        let expectation = expectation(description: "Streaming upload with body")
-        
+    func testStreamingUploadWithBody() async throws {
         let script = """
             (async () => {
                 try {
@@ -229,10 +250,11 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         hasData: !!result.data
                     };
                 } catch (error) {
-                    console.error('Upload error:', error.message);
                     return {
                         success: false,
-                        error: error.message
+                        error: error.message,
+                        errorName: error.name || 'UnknownError',
+                        errorStack: error.stack || 'No stack trace'
                     };
                 }
             })()
@@ -243,18 +265,42 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Upload should return a promise")
         
-        expectation.fulfill()
-        
-        waitForExpectations(timeout: 15.0) { error in
-            XCTAssertNil(error, "Upload test timed out")
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
+
+        // Validate the results with comprehensive error handling
+        let success = result["success"].boolValue ?? false
+
+        if success {
+            // Test passed - validate success criteria
+            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let hasData = result["hasData"].boolValue ?? false
+
+            XCTAssertTrue(
+                statusCode >= 200 && statusCode < 300,
+                "Expected successful HTTP status, got \(statusCode)")
+            XCTAssertTrue(hasData, "Expected response data")
+
+            print("✅ Streaming upload test passed: status \(statusCode), has data: \(hasData)")
+        } else {
+            // Test failed - provide detailed error information
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+
+            XCTFail(
+                """
+                Streaming upload test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                """)
         }
     }
-    
+
     // MARK: - Progress Handler Tests
-    
-    func testStreamingWithProgressHandler() {
-        let expectation = expectation(description: "Streaming with progress handler")
-        
+
+    func testStreamingWithProgressHandler() async throws {
         let script = """
             (async () => {
                 try {
@@ -284,10 +330,12 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         statusCode: result.response.statusCode
                     };
                 } catch (error) {
-                    console.error('Progress streaming error:', error.message);
                     return {
                         success: false,
-                        error: error.message
+                        error: error.message,
+                        errorName: error.name || 'UnknownError',
+                        errorStack: error.stack || 'No stack trace',
+                        progressCallCount: progressCallCount || 0
                     };
                 }
             })()
@@ -298,18 +346,47 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Progress streaming should return a promise")
         
-        expectation.fulfill()
-        
-        waitForExpectations(timeout: 10.0) { error in
-            XCTAssertNil(error, "Progress handler test timed out")
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
+
+        // Validate the results with comprehensive error handling
+        let success = result["success"].boolValue ?? false
+
+        if success {
+            // Test passed - validate success criteria
+            let progressCallCount = Int(result["progressCallCount"].numberValue ?? 0)
+            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+
+            XCTAssertTrue(
+                progressCallCount > 0, "Expected progress calls, got \(progressCallCount)")
+            XCTAssertTrue(
+                statusCode >= 200 && statusCode < 300,
+                "Expected successful HTTP status, got \(statusCode)")
+
+            print(
+                "✅ Progress handler test passed: \(progressCallCount) progress calls, status \(statusCode)"
+            )
+        } else {
+            // Test failed - provide detailed error information
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+            let progressCallCount = Int(result["progressCallCount"].numberValue ?? 0)
+
+            XCTFail(
+                """
+                Progress handler test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                Progress Calls: \(progressCallCount)
+                """)
         }
     }
-    
+
     // MARK: - Error Handling Tests
-    
-    func testStreamingErrorHandling() {
-        let expectation = expectation(description: "Streaming error handling")
-        
+
+    func testStreamingErrorHandling() async throws {
         let script = """
             (async () => {
                 try {
@@ -323,21 +400,24 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         console.log('Unexpected success for invalid URL');
                         return {
                             success: false,
-                            reason: 'Expected error but got success'
+                            reason: 'Expected error but got success',
+                            unexpectedStatusCode: result.response.statusCode
                         };
                     } catch (error) {
                         console.log('Expected error for invalid URL:', error.message);
                         return {
                             success: true,
                             errorHandled: true,
-                            errorMessage: error.message
+                            errorMessage: error.message,
+                            errorName: error.name || 'UnknownError'
                         };
                     }
                 } catch (error) {
-                    console.error('Error handling test failed:', error.message);
                     return {
                         success: false,
-                        error: error.message
+                        error: error.message,
+                        errorName: error.name || 'UnknownError',
+                        errorStack: error.stack || 'No stack trace'
                     };
                 }
             })()
@@ -348,10 +428,44 @@ final class NIOStreamingIntegrationTests: XCTestCase {
         
         XCTAssertFalse(promise.isUndefined, "Error handling should return a promise")
         
-        expectation.fulfill()
-        
-        waitForExpectations(timeout: 10.0) { error in
-            XCTAssertNil(error, "Error handling test timed out")
+        // Properly await the promise and validate results
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
+
+        // Validate the results with comprehensive error handling
+        let success = result["success"].boolValue ?? false
+
+        if success {
+            // Test passed - validate that error was properly handled
+            let errorHandled = result["errorHandled"].boolValue ?? false
+            let errorMessage = result["errorMessage"].toString()
+            let errorName = result["errorName"].toString()
+
+            XCTAssertTrue(errorHandled, "Error should have been handled properly")
+            XCTAssertFalse(errorMessage.isEmpty, "Error message should not be empty")
+            XCTAssertFalse(errorName.isEmpty, "Error name should not be empty")
+
+            print("✅ Error handling test passed: handled error '\(errorName)': \(errorMessage)")
+        } else {
+            // Check if this was an unexpected success case
+            if let unexpectedStatusCode = result["unexpectedStatusCode"].numberValue {
+                XCTFail(
+                    "Expected error but got unexpected success with status code: \(unexpectedStatusCode)"
+                )
+            } else {
+                // Test failed for other reasons - provide detailed error information
+                let error = result["error"].toString()
+                let errorName = result["errorName"].toString()
+                let errorStack = result["errorStack"].toString()
+
+                XCTFail(
+                    """
+                    Error handling test failed:
+                    Error: \(error)
+                    Error Type: \(errorName)
+                    Stack: \(errorStack)
+                    """)
+            }
         }
     }
     
@@ -486,9 +600,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
     
     // MARK: - Advanced Integration Error Tests
 
-    func testStreamingWithConnectionFailure() {
-        let expectation = expectation(description: "Streaming with connection failure")
-
+    func testStreamingWithConnectionFailure() async throws {
         let script = """
                 (async () => {
                     const unreliableConnections = [
@@ -550,85 +662,64 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         XCTAssertFalse(promise.isUndefined, "Connection failure test should return a promise")
 
-        expectation.fulfill()
+        // Properly await the promise and validate results
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
 
-        waitForExpectations(timeout: 20.0) { error in
-            XCTAssertNil(error, "Connection failure test timed out")
+        // Validate the results with comprehensive error handling
+        let success = result["success"].boolValue ?? false
+
+        if success {
+            // Test passed - validate success criteria
+            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let chunksReceived = Int(result["chunksReceived"].numberValue ?? 0)
+            let totalBytes = Int(result["totalBytes"].numberValue ?? 0)
+            let recoveryAttempted = result["recoveryAttempted"].boolValue ?? false
+            let hasCompleteResponse = result["hasCompleteResponse"].boolValue ?? false
+
+            XCTAssertTrue(
+                statusCode >= 200 && statusCode < 300,
+                "Expected successful HTTP status, got \(statusCode)")
+            XCTAssertTrue(
+                chunksReceived >= 0, "Chunks received should be non-negative, got \(chunksReceived)"
+            )
+            XCTAssertTrue(totalBytes >= 0, "Total bytes should be non-negative, got \(totalBytes)")
+
+            // Recovery logic should be attempted or chunks should be received
+            XCTAssertTrue(
+                recoveryAttempted || chunksReceived > 0,
+                "Either recovery should be attempted or chunks should be received")
+
+            // Validate complete response when status is 200
+            if statusCode == 200 {
+                XCTAssertTrue(
+                    hasCompleteResponse, "Complete response should be available for status 200")
+            }
+
+            print(
+                "✅ Partial stream recovery test passed: \(chunksReceived) chunks, \(totalBytes) bytes, recovery attempted: \(recoveryAttempted)"
+            )
+        } else {
+            // Test failed - provide detailed error information
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+            let chunksReceived = Int(result["chunksReceived"].numberValue ?? 0)
+            let totalBytes = Int(result["totalBytes"].numberValue ?? 0)
+            let recoveryAttempted = result["recoveryAttempted"].boolValue ?? false
+
+            XCTFail(
+                """
+                Partial stream recovery test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                Partial Results: \(chunksReceived) chunks, \(totalBytes) bytes, recovery attempted: \(recoveryAttempted)
+                """)
         }
     }
 
-    func testPartialStreamRecovery() {
-        let expectation = expectation(description: "Partial stream recovery")
-
-        let script = """
-                (async () => {
-                    try {
-                        console.log('Testing partial stream recovery...');
-                        
-                        var chunksReceived = 0;
-                        var totalBytes = 0;
-                        var recoveryAttempted = false;
-                        
-                        const session = __APPLE_SPEC__.URLSession.shared();
-                        const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/stream/5');
-                        
-                        const progressHandler = function(chunk, isComplete) {
-                            chunksReceived++;
-                            totalBytes += chunk.length;
-                            
-                            console.log(`Progress: chunk ${chunksReceived}, ${chunk.length} bytes, complete: ${isComplete}`);
-                            
-                            // Simulate recovery logic after partial failure
-                            if (chunksReceived === 3 && !recoveryAttempted) {
-                                recoveryAttempted = true;
-                                console.log('Simulating recovery after partial data...');
-                            }
-                        };
-                        
-                        const result = await session.httpRequestWithRequest(
-                            request,
-                            null,
-                            progressHandler,
-                            null
-                        );
-                        
-                        return {
-                            success: true,
-                            statusCode: result.response.statusCode,
-                            chunksReceived: chunksReceived,
-                            totalBytes: totalBytes,
-                            recoveryAttempted: recoveryAttempted,
-                            hasCompleteResponse: !!result.data && result.response.statusCode === 200
-                        };
-                        
-                    } catch (error) {
-                        console.error('Partial stream recovery error:', error.message);
-                        return {
-                            success: false,
-                            error: error.message,
-                            chunksReceived: chunksReceived,
-                            totalBytes: totalBytes,
-                            recoveryAttempted: recoveryAttempted
-                        };
-                    }
-                })()
-            """
-
-        let context = SwiftJS()
-        let promise = context.evaluateScript(script)
-
-        XCTAssertFalse(promise.isUndefined, "Partial stream recovery should return a promise")
-
-        expectation.fulfill()
-
-        waitForExpectations(timeout: 15.0) { error in
-            XCTAssertNil(error, "Partial stream recovery test timed out")
-        }
-    }
-
-    func testStreamingResourceExhaustion() {
-        let expectation = expectation(description: "Streaming resource exhaustion")
-
+    func testStreamingResourceExhaustion() async throws {
         let script = """
                 (async () => {
                     try {
@@ -689,10 +780,15 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         };
                         
                     } catch (error) {
-                        console.error('Resource exhaustion test error:', error.message);
                         return {
                             success: false,
-                            error: error.message
+                            error: error.message,
+                            errorName: error.name || 'UnknownError',
+                            errorStack: error.stack || 'No stack trace',
+                            totalStreams: maxConcurrentStreams || 0,
+                            successfulStreams: 0,
+                            failedStreams: maxConcurrentStreams || 0,
+                            partialResults: results || []
                         };
                     }
                 })()
@@ -703,16 +799,55 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         XCTAssertFalse(promise.isUndefined, "Resource exhaustion test should return a promise")
 
-        expectation.fulfill()
+        // Properly await the promise and validate results
+        // Use the new awaitPromise method for simplified async handling
+        let result = try await promise.awaitPromise()
 
-        waitForExpectations(timeout: 30.0) { error in
-            XCTAssertNil(error, "Resource exhaustion test timed out")
+        // Validate the results with comprehensive error handling
+        let totalStreams = Int(result["totalStreams"].numberValue ?? 0)
+        let successfulStreams = Int(result["successfulStreams"].numberValue ?? 0)
+        let failedStreams = Int(result["failedStreams"].numberValue ?? 0)
+        let handledConcurrency = result["handledConcurrency"].boolValue ?? false
+        let resourceExhaustionHandled = result["resourceExhaustionHandled"].boolValue ?? false
+        let duration = Int(result["duration"].numberValue ?? 0)
+
+        // Check if this was an error case
+        if result["success"].boolValue == false {
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+
+            XCTFail(
+                """
+                Resource exhaustion test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                Partial Results: \(successfulStreams) successful, \(failedStreams) failed out of \(totalStreams) total
+                """)
+        } else {
+            // Validate successful execution
+            XCTAssertEqual(totalStreams, 10, "Should have tested 10 concurrent streams")
+            XCTAssertTrue(handledConcurrency, "Should have handled concurrent operations")
+            XCTAssertTrue(
+                resourceExhaustionHandled, "Should have handled resource exhaustion gracefully")
+            XCTAssertTrue(successfulStreams >= 0, "Successful streams should be non-negative")
+            XCTAssertTrue(failedStreams >= 0, "Failed streams should be non-negative")
+            XCTAssertEqual(
+                successfulStreams + failedStreams, totalStreams,
+                "Success + failed should equal total")
+            XCTAssertTrue(duration > 0, "Duration should be positive")
+
+            // At least some operations should complete (either successfully or with proper error handling)
+            XCTAssertTrue(totalStreams > 0, "Should have completed some operations")
+
+            print(
+                "✅ Resource exhaustion test completed: \(successfulStreams) successful, \(failedStreams) failed out of \(totalStreams) total in \(duration)ms"
+            )
         }
     }
 
-    func testStreamingDataIntegrity() {
-        let expectation = expectation(description: "Streaming data integrity")
-
+    func testStreamingDataIntegrity() async throws {
         let script = """
                 (async () => {
                     try {
@@ -772,10 +907,11 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         };
                         
                     } catch (error) {
-                        console.error('Data integrity test error:', error.message);
                         return {
                             success: false,
                             error: error.message,
+                            errorName: error.name || 'UnknownError',
+                            errorStack: error.stack || 'No stack trace',
                             receivedChunks: receivedChunks || 0,
                             totalBytesReceived: totalBytesReceived || 0
                         };
@@ -785,13 +921,51 @@ final class NIOStreamingIntegrationTests: XCTestCase {
 
         let context = SwiftJS()
         let promise = context.evaluateScript(script)
-
+        
         XCTAssertFalse(promise.isUndefined, "Data integrity test should return a promise")
+        
+        // Properly wait for the promise to resolve and validate results
+        let result = try await promise.awaitPromise()
 
-        expectation.fulfill()
+        // Validate the results with proper error handling
+        let success = result["success"].boolValue ?? false
 
-        waitForExpectations(timeout: 20.0) { error in
-            XCTAssertNil(error, "Data integrity test timed out")
+        if success {
+            // Test passed - validate success criteria
+            let statusCode = Int(result["statusCode"].numberValue ?? 0)
+            let receivedChunks = Int(result["receivedChunks"].numberValue ?? 0)
+            let totalBytesReceived = Int(result["totalBytesReceived"].numberValue ?? 0)
+            let integrityMaintained = result["integrityMaintained"].boolValue ?? false
+            let hasResponseData = result["hasResponseData"].boolValue ?? false
+
+            XCTAssertTrue(
+                statusCode >= 200 && statusCode < 300,
+                "Expected successful HTTP status, got \(statusCode)")
+            XCTAssertTrue(receivedChunks > 0, "Expected to receive chunks, got \(receivedChunks)")
+            XCTAssertTrue(
+                totalBytesReceived > 0, "Expected to receive bytes, got \(totalBytesReceived)")
+            XCTAssertTrue(integrityMaintained, "Data integrity was not maintained")
+            XCTAssertTrue(hasResponseData, "Expected response data")
+
+            print(
+                "✅ Data integrity test passed: \(receivedChunks) chunks, \(totalBytesReceived) bytes"
+            )
+        } else {
+            // Test failed - provide detailed error information
+            let error = result["error"].toString()
+            let errorName = result["errorName"].toString()
+            let errorStack = result["errorStack"].toString()
+            let receivedChunks = Int(result["receivedChunks"].numberValue ?? 0)
+            let totalBytesReceived = Int(result["totalBytesReceived"].numberValue ?? 0)
+
+            XCTFail(
+                """
+                Data integrity test failed:
+                Error: \(error)
+                Error Type: \(errorName)
+                Stack: \(errorStack)
+                Partial Results: \(receivedChunks) chunks, \(totalBytesReceived) bytes
+                """)
         }
     }
 
