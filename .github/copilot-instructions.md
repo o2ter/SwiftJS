@@ -130,6 +130,29 @@ if let polyfillJs = Bundle.module.url(forResource: "polyfill", withExtension: "j
 - Focus on web standard APIs that work in non-DOM environments (workers, Node.js-like runtime)
 - When web specs reference DOM concepts, implement the non-DOM portions or provide appropriate alternatives
 
+### Platform and System Call Guidelines
+**CRITICAL:** Always use POSIX-compliant approaches for system calls and platform-specific operations:
+
+- **Prefer POSIX over platform-specific APIs**: Use standard POSIX functions instead of Darwin/macOS-specific calls when possible
+- **Use Foundation wrappers**: `Foundation.exit()` instead of `Darwin.exit()` for better portability
+- **Examples of POSIX-compliant patterns**:
+  ```swift
+  // ❌ WRONG - Darwin-specific
+  import Darwin
+  Darwin.exit(code)
+  
+  // ✅ CORRECT - POSIX-compliant via Foundation
+  import Foundation
+  Foundation.exit(code)
+  ```
+- **Why POSIX compliance matters**:
+  - Better portability across Unix-like systems
+  - More standard and widely supported APIs
+  - Easier to maintain and understand for developers familiar with POSIX
+  - Foundation provides appropriate abstractions over platform differences
+- **When to deviate**: Only use platform-specific APIs when POSIX alternatives don't exist or when Apple-specific functionality is explicitly required
+- **Document platform dependencies**: Clearly note when platform-specific code is necessary and why
+
 ### Error Handling
 - JavaScript exceptions are captured via `JSContext.exceptionHandler`
 - Swift functions exposed to JS should throw `SwiftJS.Value` errors for proper JS error handling
