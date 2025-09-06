@@ -130,7 +130,7 @@ final class PathTests: XCTestCase {
     
     func testPathResolve() {
         let script = """
-            var cwd = __APPLE_SPEC__.FileSystem.currentDirectoryPath;
+            var cwd = __APPLE_SPEC__.FileSystem.currentDirectoryPath();
             
             ({
                 currentDir: Path.resolve('.'),
