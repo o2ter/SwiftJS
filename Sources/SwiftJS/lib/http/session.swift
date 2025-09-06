@@ -38,8 +38,7 @@ final class DataAccumulator: @unchecked Sendable {
     func httpRequestWithRequest(
         _ request: JSURLRequest,
         _ bodyStream: JSValue,
-        _ progressHandler: JSValue,
-        _ completionHandler: JSValue?
+        _ progressHandler: JSValue
     ) -> JSValue?
 }
 
@@ -61,8 +60,7 @@ final class DataAccumulator: @unchecked Sendable {
     func httpRequestWithRequest(
         _ request: JSURLRequest,
         _ bodyStream: JSValue,
-        _ progressHandler: JSValue,
-        _ completionHandler: JSValue?
+        _ progressHandler: JSValue
     ) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
@@ -128,37 +126,8 @@ final class DataAccumulator: @unchecked Sendable {
                         url: request.url
                     )
 
-                    // Build data JSValue from accumulator
-                    let dataValue: JSValue
-                    if !accumulator.data.isEmpty {
-                        dataValue = JSValue.uint8Array(count: accumulator.data.count, in: context) {
-                            buffer in
-                            accumulator.data.copyBytes(
-                                to: buffer.bindMemory(to: UInt8.self), count: accumulator.data.count
-                            )
-                        }
-                    } else {
-                        dataValue = JSValue.uint8Array(count: 0, in: context)
-                    }
-
-                    // For streaming mode (progress handler provided), resolve with JSURLResponse directly
-                    if progressHandler != nil {
-                        resolve?.call(withArguments: [JSValue(object: jsResponse, in: context)!])
-                    } else {
-                        // Non-streaming mode - resolve with a consistent result object containing `data` and `response`
-                        let responseValue = JSValue(object: jsResponse, in: context)!
-                        let result = JSValue(newObjectIn: context)!
-                        result.setValue(dataValue, forProperty: "data")
-                        result.setValue(responseValue, forProperty: "response")
-
-                        // Call legacy completion handler if provided
-                        if let handler = completionHandler {
-                            let nullValue = JSValue(nullIn: context)!
-                            handler.call(withArguments: [nullValue, dataValue, responseValue])
-                        }
-
-                        resolve?.call(withArguments: [result])
-                    }
+                    // resolve with JSURLResponse directly
+                    resolve?.call(withArguments: [JSValue(object: jsResponse, in: context)!])
                 } catch {
                     reject?.call(withArguments: [
                         JSValue(newErrorFromMessage: error.localizedDescription, in: context)!

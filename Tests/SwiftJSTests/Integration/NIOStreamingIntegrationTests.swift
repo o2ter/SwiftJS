@@ -113,7 +113,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     const session = __APPLE_SPEC__.URLSession.shared();
                     const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get');
                     
-                    const result = await session.httpRequestWithRequest(request, null, null, null);
+                    const result = await session.httpRequestWithRequest(request, null, null);
                     
                     console.log('Response received:', {
                         status: result.response.statusCode,
@@ -239,8 +239,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     const result = await session.httpRequestWithRequest(
                         request, 
                         bodyStream,     // bodyStream parameter
-                        null,           // progressHandler
-                        null            // completionHandler
+                        null           // progressHandler
                     );
                     
                     console.log('Upload response:', result.response.statusCode);
@@ -319,8 +318,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     const result = await session.httpRequestWithRequest(
                         request,
                         null,               // bodyStream
-                        progressHandler,    // progressHandler for streaming
-                        null                // completionHandler
+                        progressHandler    // progressHandler for streaming
                     );
                     
                     console.log('Progress streaming complete, calls:', progressCallCount);
@@ -396,7 +394,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                     const request = new __APPLE_SPEC__.URLRequest('https://invalid-url-that-does-not-exist.com');
                     
                     try {
-                        const result = await session.httpRequestWithRequest(request, null, null, null);
+                        const result = await session.httpRequestWithRequest(request, null, null);
                         console.log('Unexpected success for invalid URL');
                         return {
                             success: false,
@@ -621,7 +619,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                             
                             const startTime = Date.now();
                             const result = await Promise.race([
-                                session.httpRequestWithRequest(request, null, null, null),
+                                session.httpRequestWithRequest(request, null, null),
                                 new Promise((_, reject) => 
                                     setTimeout(() => reject(new Error('Test timeout')), 3000)
                                 )
@@ -737,7 +735,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                                     const session = __APPLE_SPEC__.URLSession.shared();
                                     const request = new __APPLE_SPEC__.URLRequest('https://postman-echo.com/get?stream=' + streamIndex);
                                     
-                                    const result = await session.httpRequestWithRequest(request, null, null, null);
+                                    const result = await session.httpRequestWithRequest(request, null, null);
                                     
                                     return {
                                         streamIndex: streamIndex,
@@ -890,8 +888,7 @@ final class NIOStreamingIntegrationTests: XCTestCase {
                         const result = await session.httpRequestWithRequest(
                             request,
                             bodyStream,
-                            progressHandler,
-                            null
+                            progressHandler
                         );
                         
                         const expectedBytes = new TextEncoder().encode(expectedData).length;

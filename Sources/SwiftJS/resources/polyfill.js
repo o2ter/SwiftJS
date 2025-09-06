@@ -1993,8 +1993,7 @@
       const promise = session.httpRequestWithRequest(
         this.#request,
         null,              // bodyStream 
-        progressHandler,   // progressHandler for streaming updates
-        null               // completionHandler
+        progressHandler   // progressHandler for streaming updates
       );
 
       promise
@@ -2881,8 +2880,7 @@
       const requestPromise = session.httpRequestWithRequest(
         urlRequest,
         bodyStream,       // bodyStream parameter
-        progressHandler,  // progressHandler for streaming response
-        null              // completionHandler parameter
+        progressHandler  // progressHandler for streaming response
       );
 
       const result = abortPromise ?
