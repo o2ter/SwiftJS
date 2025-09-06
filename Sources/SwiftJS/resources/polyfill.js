@@ -1997,6 +1997,7 @@
     #headers;
     #body;
     #signal;
+    #redirect;
     #bodyUsed = false;
 
     constructor(input, init = {}) {
@@ -2014,6 +2015,7 @@
       this.#headers = new Headers(request.headers);
       this.#body = request.body;
       this.#signal = request.signal;
+      this.#redirect = request.redirect;
     }
 
     #initializeFromUrl(url, init) {
@@ -2022,6 +2024,12 @@
       this.#headers = new Headers(init.headers);
       this.#body = init.body || null;
       this.#signal = init.signal || null;
+      this.#redirect = init.redirect || 'follow';
+
+      // Validate redirect option
+      if (!['follow', 'error', 'manual'].includes(this.#redirect)) {
+        throw new TypeError(`Invalid redirect option: ${this.#redirect}`);
+      }
     }
 
     // Getters
@@ -2030,6 +2038,7 @@
     get headers() { return this.#headers; }
     get body() { return this.#body; }
     get signal() { return this.#signal; }
+    get redirect() { return this.#redirect; }
     get bodyUsed() { return this.#bodyUsed; }
 
     #setBodyUsed() {
@@ -2051,9 +2060,15 @@
 
       if (!this.body) return new ArrayBuffer(0);
       if (this.body instanceof ArrayBuffer) return this.body;
+      if (this.body instanceof Blob) {
+        return await this.body.arrayBuffer();
+      }
       if (this.body instanceof FormData) {
         const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return new TextEncoder().encode(multipart.body).buffer;
+      }
+      if (this.body instanceof URLSearchParams) {
+        return new TextEncoder().encode(this.body.toString()).buffer;
       }
       if (typeof this.body === 'string') {
         return new TextEncoder().encode(this.body).buffer;
@@ -2082,6 +2097,12 @@
 
       if (!this.body) return '';
       if (typeof this.body === 'string') return this.body;
+      if (this.body instanceof URLSearchParams) {
+        return this.body.toString();
+      }
+      if (this.body instanceof Blob) {
+        return await this.body.text();
+      }
       if (this.body instanceof FormData) {
         const multipart = this.body[SYMBOLS.formDataToMultipart]();
         return multipart.body;
@@ -2134,11 +2155,18 @@
 
       // Create a ReadableStream from the body data
       return new ReadableStream({
-        start(controller) {
+        async start(controller) {
           try {
             if (typeof body === 'string') {
               const encoder = new TextEncoder();
               const bytes = encoder.encode(body);
+              controller.enqueue(bytes);
+            } else if (body instanceof Blob) {
+              const buffer = await body.arrayBuffer();
+              controller.enqueue(new Uint8Array(buffer));
+            } else if (body instanceof URLSearchParams) {
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(body.toString());
               controller.enqueue(bytes);
             } else if (body instanceof Uint8Array) {
               controller.enqueue(body);
@@ -2412,6 +2440,21 @@
           `multipart/form-data; boundary=${multipart.boundary}`,
           'Content-Type'
         );
+      } else if (request.body instanceof URLSearchParams) {
+        urlRequest.httpBody = request.body.toString();
+        if (!request.headers.has('Content-Type')) {
+          urlRequest.setValueForHTTPHeaderField(
+            'application/x-www-form-urlencoded',
+            'Content-Type'
+          );
+        }
+      } else if (request.body instanceof Blob) {
+        // Convert Blob to Uint8Array for sending
+        const buffer = await request.body.arrayBuffer();
+        urlRequest.httpBody = new Uint8Array(buffer);
+        if (!request.headers.has('Content-Type') && request.body.type) {
+          urlRequest.setValueForHTTPHeaderField(request.body.type, 'Content-Type');
+        }
       } else if (typeof request.body === 'string') {
         urlRequest.httpBody = request.body;
       } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
@@ -2497,6 +2540,19 @@
         url: result.url || request.url
       });
 
+      // Handle redirect option
+      if (response.status >= 300 && response.status < 400) {
+        if (request.redirect === 'error') {
+          const redirectError = new TypeError('Redirected');
+          redirectError.name = 'TypeError';
+          throw redirectError;
+        } else if (request.redirect === 'manual') {
+          // Return the redirect response without following it
+          return response;
+        }
+        // For 'follow' (default), the underlying HTTP client should handle it automatically
+      }
+
       return response;
     } catch (error) {
       // Make sure to close the stream on any error
@@ -2505,6 +2561,113 @@
         responseBodyController = null;
       }
       throw error;
+    }
+  };
+
+  // URLSearchParams - URL search parameters manipulation
+  globalThis.URLSearchParams = class URLSearchParams {
+    #params = new Map();
+
+    constructor(init) {
+      if (typeof init === 'string') {
+        this.#parseString(init);
+      } else if (init instanceof URLSearchParams) {
+        this.#params = new Map(init.#params);
+      } else if (Array.isArray(init)) {
+        for (const [key, value] of init) {
+          this.append(String(key), String(value));
+        }
+      } else if (init && typeof init === 'object') {
+        for (const [key, value] of Object.entries(init)) {
+          this.append(String(key), String(value));
+        }
+      }
+    }
+
+    #parseString(str) {
+      const cleanStr = str.startsWith('?') ? str.slice(1) : str;
+      if (!cleanStr) return;
+
+      const pairs = cleanStr.split('&');
+      for (const pair of pairs) {
+        const [key, ...valueParts] = pair.split('=');
+        const value = valueParts.join('=');
+        this.append(
+          decodeURIComponent(key.replace(/\+/g, ' ')),
+          decodeURIComponent(value.replace(/\+/g, ' '))
+        );
+      }
+    }
+
+    append(name, value) {
+      const key = String(name);
+      const val = String(value);
+      if (!this.#params.has(key)) {
+        this.#params.set(key, []);
+      }
+      this.#params.get(key).push(val);
+    }
+
+    delete(name) {
+      this.#params.delete(String(name));
+    }
+
+    get(name) {
+      const values = this.#params.get(String(name));
+      return values && values.length > 0 ? values[0] : null;
+    }
+
+    getAll(name) {
+      return this.#params.get(String(name)) || [];
+    }
+
+    has(name) {
+      return this.#params.has(String(name));
+    }
+
+    set(name, value) {
+      this.#params.set(String(name), [String(value)]);
+    }
+
+    sort() {
+      const sorted = new Map([...this.#params.entries()].sort());
+      this.#params = sorted;
+    }
+
+    toString() {
+      const parts = [];
+      for (const [key, values] of this.#params) {
+        for (const value of values) {
+          const encodedKey = encodeURIComponent(key).replace(/%20/g, '+');
+          const encodedValue = encodeURIComponent(value).replace(/%20/g, '+');
+          parts.push(`${encodedKey}=${encodedValue}`);
+        }
+      }
+      return parts.join('&');
+    }
+
+    *entries() {
+      for (const [key, values] of this.#params) {
+        for (const value of values) {
+          yield [key, value];
+        }
+      }
+    }
+
+    *keys() {
+      for (const [key] of this.entries()) {
+        yield key;
+      }
+    }
+
+    *values() {
+      for (const [, value] of this.entries()) {
+        yield value;
+      }
+    }
+
+    [Symbol.iterator]() {
+      return this.entries();
     }
   };
 
