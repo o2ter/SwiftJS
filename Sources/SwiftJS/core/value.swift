@@ -763,10 +763,8 @@ extension SwiftJS.Value {
 
             context.runloop.perform {
             
+                // Check if this is actually a promise (has then and catch methods)
                 let thenMethod = jsValue.forProperty("then")
-                let catchMethod = jsValue.forProperty("catch")
-
-                // Check if this is actually a promise (has then method)
                 guard let thenMethod = thenMethod, thenMethod.isObject else {
                     continuation.resume(
                         throwing: NSError(
@@ -780,7 +778,8 @@ extension SwiftJS.Value {
                     return
                 }
 
-                guard let catchMethod = catchMethod else {
+                let catchMethod = jsValue.forProperty("catch")
+                guard catchMethod != nil else {
                     continuation.resume(
                         throwing: NSError(
                             domain: "SwiftJSError",
@@ -823,9 +822,9 @@ extension SwiftJS.Value {
                     return JSValue(undefinedIn: context.base)
                 }
 
-                // Attach then and catch handlers
-                thenMethod.call(withArguments: [resolveCallback])
-                catchMethod.call(withArguments: [rejectCallback])
+                // Use invokeMethod to preserve 'this' context binding
+                jsValue.invokeMethod("then", withArguments: [resolveCallback])
+                jsValue.invokeMethod("catch", withArguments: [rejectCallback])
             }
         }
     }
