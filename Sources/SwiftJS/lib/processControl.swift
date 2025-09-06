@@ -25,7 +25,6 @@
 
 import Foundation
 import JavaScriptCore
-import Darwin
 
 @objc protocol JSProcessControlExport: JSExport {
     func exit(_ code: Int32)
@@ -34,8 +33,8 @@ import Darwin
 @objc final class JSProcessControl: NSObject, JSProcessControlExport {
     
     func exit(_ code: Int32) {
-        // Directly call Darwin's exit function to terminate the process
-        // This is clean and doesn't pollute the global JavaScript namespace
-        Darwin.exit(code)
+        // Use POSIX exit function to terminate the process
+        // This is more portable across POSIX-compliant systems
+        Foundation.exit(code)
     }
 }
