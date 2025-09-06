@@ -1099,6 +1099,182 @@ final class FetchTests: XCTestCase {
         wait(for: [expectation], timeout: 15.0)
     }
     
+    func testFetchConcurrency() {
+        let expectation = XCTestExpectation(description: "Fetch concurrency verification")
+
+        let script = """
+                // Test that fetch requests truly run concurrently
+                const delays = [2, 3, 1]; // Different delays to verify concurrency
+                const startTime = Date.now();
+                
+                console.log('Testing fetch concurrency with delays:', delays);
+                
+                Promise.all(delays.map((delay, index) => {
+                    const requestStart = Date.now();
+                    console.log(`Request ${index} (${delay}s delay) starting at ${requestStart - startTime}ms`);
+                    
+                    return fetch(`https://postman-echo.com/delay/${delay}`)
+                        .then(response => {
+                            const requestEnd = Date.now();
+                            console.log(`Request ${index} completed at ${requestEnd - startTime}ms`);
+                            return {
+                                index: index,
+                                delay: delay,
+                                duration: requestEnd - requestStart,
+                                completedAt: requestEnd - startTime
+                            };
+                        });
+                })).then(results => {
+                    const endTime = Date.now();
+                    const totalDuration = endTime - startTime;
+                    
+                    // Sort by completion time to verify order
+                    const sortedResults = results.sort((a, b) => a.completedAt - b.completedAt);
+                    const completionOrder = sortedResults.map(r => r.delay);
+                    
+                    // For true concurrency, shortest delay (1s) should complete first, then 2s, then 3s
+                    const expectedOrder = [1, 2, 3];
+                    const correctOrder = JSON.stringify(completionOrder) === JSON.stringify(expectedOrder);
+                    
+                    // Calculate speedup vs sequential execution
+                    const sequentialTime = delays.reduce((sum, delay) => sum + (delay * 1000), 0);
+                    const speedup = sequentialTime / totalDuration;
+                    
+                    testCompleted({
+                        totalDuration: totalDuration,
+                        completionOrder: completionOrder,
+                        expectedOrder: expectedOrder,
+                        correctOrder: correctOrder,
+                        speedup: speedup,
+                        isConcurrent: speedup > 1.2 && correctOrder, // At least 1.2x speedup + correct order
+                        results: results,
+                        maxExpectedTime: Math.max(...delays) * 1000 + 2000 // Max delay + 2s buffer
+                    });
+                })
+                .catch(error => {
+                    testCompleted({ error: error.message });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if result["error"].isString {
+                XCTAssertTrue(true, "Network test skipped: \(result["error"].toString())")
+            } else {
+                let totalDuration = result["totalDuration"].numberValue ?? 0
+                let maxExpectedTime = result["maxExpectedTime"].numberValue ?? 0
+                let speedup = result["speedup"].numberValue ?? 0
+
+                XCTAssertTrue(
+                    result["correctOrder"].boolValue ?? false,
+                    "Requests should complete in order of their delays (1s, 2s, 3s)")
+                XCTAssertGreaterThan(
+                    speedup, 1.2,
+                    "Concurrent execution should be at least 1.2x faster than sequential")
+                XCTAssertLessThan(
+                    totalDuration, maxExpectedTime,
+                    "Total time should not exceed longest individual request + buffer")
+                XCTAssertTrue(
+                    result["isConcurrent"].boolValue ?? false,
+                    "Fetch requests should run concurrently")
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 15.0)
+    }
+
+    func testFetchConcurrencyStress() {
+        let expectation = XCTestExpectation(description: "Fetch concurrency stress test")
+
+        let script = """
+                // Stress test with multiple concurrent requests
+                const requestCount = 5; // Reduce to 5 requests for more reliable testing
+                const delay = 2; // 2 second delay for each
+                const startTime = Date.now();
+                
+                const promises = Array(requestCount).fill(null).map((_, index) => {
+                    return fetch(`https://postman-echo.com/delay/${delay}`)
+                        .then(response => ({
+                            index: index,
+                            status: response.status,
+                            completedAt: Date.now() - startTime
+                        }));
+                });
+                
+                Promise.all(promises).then(results => {
+                    const endTime = Date.now();
+                    const totalDuration = endTime - startTime;
+                    
+                    // Check completion time spread
+                    const completionTimes = results.map(r => r.completedAt);
+                    const minCompletion = Math.min(...completionTimes);
+                    const maxCompletion = Math.max(...completionTimes);
+                    const completionSpread = maxCompletion - minCompletion;
+                    
+                    // For true concurrency, all should complete within a narrow window
+                    const allSuccessful = results.every(r => r.status === 200);
+                    const sequentialTime = requestCount * delay * 1000; // If run sequentially
+                    const speedup = sequentialTime / totalDuration;
+                    
+                    testCompleted({
+                        requestCount: requestCount,
+                        totalDuration: totalDuration,
+                        sequentialTime: sequentialTime,
+                        speedup: speedup,
+                        completionSpread: completionSpread,
+                        allSuccessful: allSuccessful,
+                        maxReasonableTime: (delay * 1000) + 4000, // Delay + 4s buffer
+                        isConcurrentStress: speedup > 2.0 && completionSpread < 6000 && allSuccessful
+                    });
+                })
+                .catch(error => {
+                    testCompleted({ error: error.message });
+                });
+            """
+
+        let context = SwiftJS()
+        context.globalObject["testCompleted"] = SwiftJS.Value(in: context) { args, this in
+            let result = args[0]
+
+            if result["error"].isString {
+                XCTAssertTrue(true, "Network test skipped: \(result["error"].toString())")
+            } else {
+                let totalDuration = result["totalDuration"].numberValue ?? 0
+                let speedup = result["speedup"].numberValue ?? 0
+                let completionSpread = result["completionSpread"].numberValue ?? 0
+                let maxReasonableTime = result["maxReasonableTime"].numberValue ?? 0
+
+                XCTAssertTrue(
+                    result["allSuccessful"].boolValue ?? false,
+                    "All concurrent requests should succeed")
+                XCTAssertGreaterThan(
+                    speedup, 2.0,
+                    "5 concurrent requests should be much faster than sequential (>2x)")
+                XCTAssertLessThan(
+                    completionSpread, 6000,
+                    "All concurrent requests should complete within 6 seconds of each other")
+                XCTAssertLessThan(
+                    totalDuration, maxReasonableTime,
+                    "Total time should be close to individual request time, not cumulative")
+                XCTAssertTrue(
+                    result["isConcurrentStress"].boolValue ?? false,
+                    "Stress test should demonstrate true concurrency")
+            }
+
+            expectation.fulfill()
+            return SwiftJS.Value.undefined
+        }
+
+        context.evaluateScript(script)
+        wait(for: [expectation], timeout: 20.0)
+    }
+
     // MARK: - Integration Tests
     
     func testFetchWithComplexRequestResponse() {
