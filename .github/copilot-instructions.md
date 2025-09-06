@@ -239,6 +239,13 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
 - Use SwiftJSRunner to execute JavaScript test files: `swift run SwiftJSRunner <script.js>`
 - SwiftJSRunner supports both file execution and eval mode: `swift run SwiftJSRunner -e "console.log('test')"`
 - All SwiftJS APIs are available in SwiftJSRunner including crypto, fetch, file system, and timers
+- **Test Case Verification**: Always examine the actual content of test cases to ensure they're testing what they're supposed to test:
+  - Read test files completely to understand test logic and assertions
+  - Verify that test descriptions match what the test actually does
+  - Check that assertions are testing the correct behavior and edge cases
+  - Ensure mocks and test data are appropriate for the scenario being tested
+  - Look for missing test cases or gaps in coverage for critical functionality
+  - Validate that tests would actually fail if the implementation was broken
 
 ## AI Agent Guidelines
 
