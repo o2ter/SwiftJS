@@ -2933,7 +2933,7 @@
     return { promise: p, resolve, reject };
   }
 
-  class ReadableStreamDefaultController {
+  globalThis.ReadableStreamDefaultController = class ReadableStreamDefaultController {
     #stream;
     #internal;
     constructor(stream, underlyingSource) {
@@ -3369,7 +3369,7 @@
     }
   }
 
-  class WritableStreamDefaultController {
+  globalThis.WritableStreamDefaultController = class WritableStreamDefaultController {
     #stream;
     #internal;
     constructor(stream, underlyingSink) {
@@ -3880,6 +3880,6 @@
     cancel(reason) {
       return this.#stream.cancel(reason);
     }
-  }
+  };
 
 })();
