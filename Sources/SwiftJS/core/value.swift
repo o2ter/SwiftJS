@@ -778,20 +778,6 @@ extension SwiftJS.Value {
                     return
                 }
 
-                let catchMethod = jsValue.forProperty("catch")
-                guard catchMethod != nil else {
-                    continuation.resume(
-                        throwing: NSError(
-                            domain: "SwiftJSError",
-                            code: 1,
-                            userInfo: [
-                                NSLocalizedDescriptionKey:
-                                    "Value is not a Promise (missing 'catch' method)"
-                            ]
-                        ))
-                    return
-                }
-
                 // Handle promise resolution
                 let resolveCallback = JSValue(newFunctionIn: context.base) { args, _ in
                     if let result = args.first {
@@ -822,9 +808,9 @@ extension SwiftJS.Value {
                     return JSValue(undefinedIn: context.base)
                 }
 
-                // Use invokeMethod to preserve 'this' context binding
-                jsValue.invokeMethod("then", withArguments: [resolveCallback])
-                jsValue.invokeMethod("catch", withArguments: [rejectCallback])
+                // Use invokeMethod with both resolve and reject callbacks
+                // The then() method accepts both onFulfilled and onRejected as arguments
+                jsValue.invokeMethod("then", withArguments: [resolveCallback, rejectCallback])
             }
         }
     }
