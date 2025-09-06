@@ -567,6 +567,52 @@ sed -i '' 's/wait(for: \[expectation\])$/wait(for: [expectation], timeout: 10.0)
 - Consider network conditions and CI environment performance
 - Prefer shorter timeouts for faster feedback, but ensure reliability
 
+### **CRITICAL:** External Service Consistency in Tests
+**Always use consistent external services across test cases to maintain reliability and predictable behavior:**
+
+**Standard External Services by Test Type:**
+- **Primary HTTP Testing**: `https://postman-echo.com` - reliable echo service for GET, POST, headers, data validation
+- **Status Code Testing**: `https://httpstat.us` - generates specific HTTP status codes and timing scenarios  
+- **DNS/Connection Errors**: `https://nonexistent-domain-12345.com` or `http://localhost:99999` - predictable failures
+- **Mock URLs (non-network)**: `https://example.com` - for Request object construction without actual requests
+- **Email Placeholders**: `test@example.com` - standard placeholder email format
+
+**Service-Specific Usage Patterns:**
+```swift
+// ✅ CORRECT - postman-echo.com for data echo and validation
+fetch('https://postman-echo.com/post', {
+    method: 'POST',
+    body: JSON.stringify({test: 'data'})
+}).then(r => r.json()).then(data => data.json.test)  // Echoes back the sent data
+
+// ✅ CORRECT - httpstat.us for specific status codes
+fetch('https://httpstat.us/404')  // Returns 404 status
+fetch('https://httpstat.us/200?sleep=1000')  // Delayed response
+
+// ✅ CORRECT - example.com for mock URLs (no actual request)
+const request = new Request('https://example.com', {method: 'POST'})
+```
+
+**Why Service Consistency Matters:**
+- **Predictable APIs**: Each service has known behavior patterns and response formats
+- **Reliability**: Well-established services have better uptime than random test endpoints
+- **Maintenance**: Easier to update tests when using consistent service patterns
+- **Debugging**: Familiar response formats make test failures easier to diagnose
+- **CI/CD Stability**: Reduces flaky tests due to service inconsistencies
+
+**❌ AVOID these inconsistent patterns:**
+- Mixing different echo services (`httpbin.org` vs `postman-echo.com`) without clear reason
+- Using random websites that might change or become unavailable
+- Creating unnecessary service dependencies when existing ones work
+- Using production APIs for testing (respect rate limits and terms of service)
+
+**Service Selection Guidelines:**
+1. **Check existing tests first** - use the same services already established in the test suite
+2. **Use minimal services** - don't introduce new external dependencies unnecessarily  
+3. **Document service requirements** - if a new service is needed, explain why in comments
+4. **Consider offline alternatives** - use mock data when external services aren't required
+5. **Test service behavior** - verify the external service works as expected before writing tests
+
 ### **CRITICAL:** Test Case Content Verification
 **Always verify that test cases are actually testing what they claim to test:**
 
@@ -574,7 +620,7 @@ sed -i '' 's/wait(for: \[expectation\])$/wait(for: [expectation], timeout: 10.0)
 // ❌ WRONG - test name suggests redirect testing but only tests basic fetch
 func testRedirectFollowing() {
     let script = """
-        fetch('https://httpbin.org/get').then(r => r.json())
+        fetch('https://postman-echo.com/get').then(r => r.json())
     """
     // This doesn't test redirects at all!
 }
@@ -582,7 +628,7 @@ func testRedirectFollowing() {
 // ✅ CORRECT - test actually verifies redirect behavior
 func testRedirectFollowing() {
     let script = """
-        fetch('https://httpbin.org/redirect/2').then(r => ({
+        fetch('https://httpstat.us/redirect/2').then(r => ({
             url: r.url,
             redirected: r.redirected,
             status: r.status
