@@ -1507,6 +1507,10 @@
       // Also call the onX handler if it exists
       const handler = this['on' + type];
       if (typeof handler === 'function') {
+        // Ensure target is set correctly for onX handlers
+        if (!event.target) {
+          event.target = this;
+        }
         handler.call(this, event);
       }
     }
@@ -1570,12 +1574,15 @@
         throw new Error('InvalidStateError: FileReader is already reading');
       }
 
-      this.#setReadyState(FileReader.LOADING);
-      this.#result = null;
-      this.#error = null;
+      // Capture 'this' reference to preserve context across async boundaries
+      const self = this;
+
+      self.#setReadyState(FileReader.LOADING);
+      self.#result = null;
+      self.#error = null;
 
       // Fire loadstart event
-      this.#fireEvent('loadstart');
+      self.#fireEvent('loadstart');
 
       try {
         let blob = blobOrFile;
@@ -1585,15 +1592,15 @@
         let loaded = 0;
 
         // Fire initial progress event
-        this.#fireEvent('progress', { loaded: 0, total, lengthComputable: total > 0 });
+        self.#fireEvent('progress', { loaded: 0, total, lengthComputable: total > 0 });
 
         let result;
 
         if (useStreaming && (format === 'arraybuffer' || format === 'text')) {
           // Use proper streaming that processes chunks as they arrive
-          result = await this.#streamingRead(blob, format, encoding, (progressLoaded) => {
+          result = await self.#streamingRead(blob, format, encoding, (progressLoaded) => {
             loaded = progressLoaded;
-            this.#fireEvent('progress', { loaded, total, lengthComputable: true });
+            self.#fireEvent('progress', { loaded, total, lengthComputable: true });
           });
         } else {
           // Standard reading for smaller files
@@ -1625,31 +1632,36 @@
         }
 
         // Check if reading was aborted
-        if (this.#readyState !== FileReader.LOADING) {
+        if (self.#readyState !== FileReader.LOADING) {
           return; // Aborted
         }
 
-        this.#result = result;
-        this.#setReadyState(FileReader.DONE);
+        self.#result = result;
+        self.#setReadyState(FileReader.DONE);
 
         // Fire final progress event
-        this.#fireEvent('progress', { loaded: total, total, lengthComputable: true });
+        self.#fireEvent('progress', { loaded: total, total, lengthComputable: true });
 
         // Fire load event
-        this.#fireEvent('load');
+        self.#fireEvent('load');
 
         // Fire loadend event
-        this.#fireEvent('loadend');
+        self.#fireEvent('loadend');
 
       } catch (error) {
-        this.#error = error;
-        this.#setReadyState(FileReader.DONE);
+        // Check if reading was aborted
+        if (self.#readyState !== FileReader.LOADING) {
+          return; // Aborted
+        }
+
+        self.#error = error;
+        self.#setReadyState(FileReader.DONE);
 
         // Fire error event
-        this.#fireEvent('error');
+        self.#fireEvent('error');
 
         // Fire loadend event
-        this.#fireEvent('loadend');
+        self.#fireEvent('loadend');
       }
     }
 
