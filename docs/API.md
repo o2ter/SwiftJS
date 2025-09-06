@@ -780,21 +780,6 @@ const buffer = new Uint8Array(16);
 crypto.getRandomValues(buffer);
 ```
 
-### HTTP Client
-
-```javascript
-// Low-level HTTP requests
-const session = __APPLE_SPEC__.URLSession.shared();
-const request = new __APPLE_SPEC__.URLRequest('https://api.example.com');
-request.httpMethod = 'GET';
-request.setValueForHTTPHeaderField('application/json', 'Accept');
-
-const response = await session.httpRequestWithRequest(request);
-console.log('Status:', response.statusCode);
-console.log('Headers:', response.allHeaderFields);
-console.log('Data:', response.data);
-```
-
 ## Error Handling
 
 ### JavaScript Exceptions

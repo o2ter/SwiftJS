@@ -30,11 +30,54 @@ import NIOHTTP1
 import NIOFoundationCompat
 import AsyncHTTPClient
 
-/// Protocol for stream controllers that can handle HTTP response data
-protocol StreamControllerProtocol: Sendable {
-    func enqueue(_ data: Data)
-    func error(_ error: Error)
-    func close()
+/// Stream controller that calls progress handler for each chunk
+/// Used for streaming methods that need to report progress
+final class StreamController: @unchecked Sendable {
+    private let context: JSContext
+    private let progressHandler: JSValue?
+    private let accumulator: DataAccumulator
+    private let lock = NSLock()
+
+    init(context: JSContext, progressHandler: JSValue?, accumulator: DataAccumulator) {
+        self.context = context
+        self.progressHandler = progressHandler
+        self.accumulator = accumulator
+    }
+
+    func enqueue(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        accumulator.data.append(data)
+
+        // Call progress handler if provided - ensure we call on the JSContext's thread
+        if let progressHandler = progressHandler, !data.isEmpty {
+            let chunk = data
+            DispatchQueue.main.async {
+                let uint8Array = JSValue.uint8Array(count: chunk.count, in: self.context) {
+                    buffer in
+                    chunk.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: chunk.count)
+                }
+                // Call progress handler with data chunk and completion status (false = not complete)
+                progressHandler.call(withArguments: [uint8Array, false])
+            }
+        }
+    }
+
+    func error(_ error: Error) {
+        // Error handling is done at the task level
+    }
+
+    func close() {
+        // Call progress handler with completion signal
+        if let progressHandler = progressHandler {
+            // Call with empty data and completion = true on JS thread
+            DispatchQueue.main.async {
+                let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
+                progressHandler.call(withArguments: [emptyArray, true])
+            }
+        }
+    }
 }
 
 /// NIO-based HTTP client for streaming requests and responses
@@ -66,7 +109,7 @@ final class NIOHTTPClient: @unchecked Sendable {
     /// Execute a streaming HTTP request
     func executeStreamingRequest(
         _ request: JSURLRequest,
-        streamController: StreamControllerProtocol
+        streamController: StreamController
     ) async throws -> HTTPResponseHead {
         
         // Convert JSURLRequest to HTTPClient.Request
@@ -130,7 +173,7 @@ final class NIOHTTPClient: @unchecked Sendable {
     func executeStreamingUpload(
         _ request: JSURLRequest,
         bodyStream: AsyncStream<Data>,
-        streamController: StreamControllerProtocol
+        streamController: StreamController
     ) async throws -> HTTPResponseHead {
         
         guard let urlString = request.url else {
