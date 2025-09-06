@@ -137,47 +137,38 @@ func main() {
     }
     signalSource.resume()
 
-    // For eval mode, use shorter inactivity timeout since it's typically one-shot
-    // For file mode, use longer timeout to allow for longer-running scripts
-    let inactivityTimeout: TimeInterval = isEvalMode ? 1.0 : 5.0
-    var lastActivityTime = Date()
-    var hasHadActivity = false
+    // Use shorter timeout for eval mode, longer for file mode
+    let checkInterval: TimeInterval = 0.1
+    let maxIdleCycles: Int = isEvalMode ? 10 : 50  // 1s for eval, 5s for file
+    var idleCycles = 0
+    
+    // Initial small delay to let any immediate async operations start
+    Thread.sleep(forTimeInterval: 0.05)
 
     while !shouldExit {
-        // Run the loop for a short period
-        let ranWork = runLoop.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        // Check if we have active timers
+        let hasTimers = context.hasActiveTimers
         
-        // If work was done, update activity time
-        if ranWork {
-            lastActivityTime = Date()
-            hasHadActivity = true
-        }
-        
-        // Exit conditions based on mode:
+        if hasTimers {
+            idleCycles = 0  // Reset idle counter when we have active timers
+        } else {
+            idleCycles += 1
+        }        // Run the loop for a short period to handle any pending operations
+        let runUntil = Date().addingTimeInterval(checkInterval)
+        runLoop.run(mode: .default, before: runUntil)
+
+        // Exit conditions based on mode and activity
         if isEvalMode {
-            // For eval mode: exit after short inactivity (likely single execution)
-            if Date().timeIntervalSince(lastActivityTime) > inactivityTimeout {
+            // For eval mode: exit after short idle period with no timers
+            if idleCycles >= maxIdleCycles {
                 break
             }
         } else {
             // For file mode: more sophisticated detection
-            let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
-
-            // Exit if we had activity but now have no timers and no recent activity
-            if hasHadActivity && !context.hasActiveTimers && timeSinceActivity > inactivityTimeout {
-                print("Script appears to have completed (no active timers). Exiting.")
-                break
-            }
-
-            // For very quick scripts that execute immediately without timers
-            if !hasHadActivity && !context.hasActiveTimers && timeSinceActivity > 1.0 {
-                print("Quick script execution completed. Exiting.")
+            if idleCycles >= maxIdleCycles {
                 break
             }
         }
-        
-        // Small sleep to prevent busy waiting
-        Thread.sleep(forTimeInterval: 0.01)
     }
     
     signalSource.cancel()
