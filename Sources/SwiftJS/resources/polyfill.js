@@ -2212,10 +2212,19 @@
         throw new TypeError('Invalid header name: must be a non-empty string');
       }
 
-      // Check for invalid characters
-      // HTTP header names cannot contain spaces, tabs, newlines, or other control characters
-      if (/[\s\x00-\x1F\x7F]/.test(name)) {
+      // Check for invalid characters according to RFC 7230
+      // Header names must be tokens: 1*( ALPHA / DIGIT / "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" )
+      if (/[^\x21\x23-\x27\x2A\x2B\x2D\x2E\x30-\x39\x41-\x5A\x5E-\x7A\x7C\x7E]/.test(name)) {
         throw new TypeError('Invalid header name: contains invalid characters');
+      }
+    }
+
+    // Validate header value according to HTTP specification  
+    #validateHeaderValue(value) {
+      const valueStr = String(value);
+      // Header values cannot contain control characters except tabs
+      if (/[\x00-\x08\x0A-\x1F\x7F]/.test(valueStr)) {
+        throw new TypeError('Invalid header value: contains invalid characters');
       }
     }
 
@@ -2227,11 +2236,13 @@
       } else if (Array.isArray(init)) {
         for (const [key, value] of init) {
           this.#validateHeaderName(key);
+          this.#validateHeaderValue(value);
           this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
         }
       } else if (typeof init === 'object') {
         for (const [key, value] of Object.entries(init)) {
           this.#validateHeaderName(key);
+          this.#validateHeaderValue(value);
           this[SYMBOLS.headersMap].set(key.toLowerCase(), String(value));
         }
       }
@@ -2239,6 +2250,7 @@
 
     append(name, value) {
       this.#validateHeaderName(name);
+      this.#validateHeaderValue(value);
       const normalizedName = name.toLowerCase();
       const existing = this[SYMBOLS.headersMap].get(normalizedName);
       const newValue = existing ? `${existing}, ${value}` : String(value);
@@ -2262,6 +2274,7 @@
 
     set(name, value) {
       this.#validateHeaderName(name);
+      this.#validateHeaderValue(value);
       this[SYMBOLS.headersMap].set(name.toLowerCase(), String(value));
     }
 
@@ -3019,6 +3032,10 @@
     }
 
     delete(name) {
+      if (arguments.length < 1) {
+        throw new TypeError(`Failed to execute 'delete' on 'URLSearchParams': 1 argument required, but only ${arguments.length} present.`);
+      }
+
       const key = String(name);
       this.#entries = this.#entries.filter(([k, v]) => k !== key);
     }
@@ -3040,6 +3057,10 @@
     }
 
     set(name, value) {
+      if (arguments.length < 2) {
+        throw new TypeError(`Failed to execute 'set' on 'URLSearchParams': 2 arguments required, but only ${arguments.length} present.`);
+      }
+
       const key = String(name);
       const val = String(value);
       // Remove all existing entries with this key
