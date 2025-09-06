@@ -2,6 +2,8 @@
 
 SwiftJSRunner is a command-line interface for executing JavaScript code using the SwiftJS runtime. It provides a Node.js-like environment for running JavaScript files and evaluating JavaScript expressions directly from the command line.
 
+**Auto-Termination**: SwiftJSRunner automatically terminates when all active operations (timers, network requests) complete, eliminating the need for explicit `process.exit()` calls in most cases.
+
 ## Installation
 
 SwiftJSRunner is included with SwiftJS and can be built using Swift Package Manager:
@@ -286,6 +288,30 @@ process.exit(1);
 process.exit(42);
 ```
 
+### Auto-Termination
+
+SwiftJSRunner features intelligent auto-termination that monitors active operations:
+
+- **Timers**: `setTimeout` and `setInterval` operations
+- **Network Requests**: HTTP requests via `fetch()` or `XMLHttpRequest`
+- **Cleanup**: Automatic cleanup of completed `setTimeout` timers
+
+The runner will automatically exit when no active operations remain, making simple scripts work without explicit exit calls:
+
+```javascript
+// This script will auto-terminate after the timer fires
+setTimeout(() => {
+    console.log('Timer executed, script will auto-terminate');
+}, 1000);
+```
+
+For complex scripts or when you need immediate termination, you can still use explicit exit:
+
+```javascript
+console.log('Done!');
+process.exit(0); // Immediate termination
+```
+
 ### Signal Handling
 
 SwiftJSRunner automatically handles SIGINT (Ctrl+C) for graceful termination:
@@ -399,10 +425,18 @@ SwiftJSRunner is not a drop-in replacement for Node.js. Key differences:
 
 ### Script Doesn't Exit
 
-If your script hangs and doesn't exit:
+SwiftJSRunner features auto-termination, but if your script hangs:
+
+1. **Check for active operations**: Ensure all timers are cleared and network requests complete
+2. **Force exit if needed**: Use explicit `process.exit()` for immediate termination
 
 ```javascript
-// Explicitly exit when done
+// If auto-termination isn't working, check for:
+// - Unclosed intervals: clearInterval(intervalId)
+// - Pending network requests
+// - Long-running operations
+
+// Force exit as last resort
 setTimeout(() => {
     console.log('Force exit');
     process.exit(0);
@@ -437,12 +471,13 @@ largeObject = null; // Help GC
 
 ## Best Practices
 
-1. **Exit Explicitly**: Call `process.exit()` when your script is done to ensure clean termination
-2. **Handle Errors**: Use try/catch for error handling and provide meaningful error messages
-3. **Use Timers Wisely**: Clear timers when no longer needed to prevent scripts from hanging
-4. **Check File Existence**: Always check if files exist before reading
-5. **Validate Arguments**: Check `process.argv` length before accessing arguments
-6. **Use Async Patterns**: Prefer async/await for asynchronous operations
+1. **Leverage Auto-Termination**: Let SwiftJSRunner automatically terminate when operations complete
+2. **Exit Explicitly When Needed**: Call `process.exit()` for immediate termination or error conditions
+3. **Handle Errors**: Use try/catch for error handling and provide meaningful error messages
+4. **Use Timers Wisely**: Clear intervals when no longer needed; `setTimeout` auto-cleans up
+5. **Check File Existence**: Always check if files exist before reading
+6. **Validate Arguments**: Check `process.argv` length before accessing arguments
+7. **Use Async Patterns**: Prefer async/await for asynchronous operations
 
 ---
 

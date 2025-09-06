@@ -263,10 +263,18 @@ swift test
 # Run specific test categories
 swift test --filter "CryptoTests"
 swift test --filter "PerformanceTests"
+swift test --filter "ThreadingTests"
 
 # Run with the test runner
 swift run SwiftJSTests
 ```
+
+The test suite includes:
+- **Core functionality**: JavaScript execution and value bridging
+- **Web APIs**: Fetch, Crypto, Streams, File operations
+- **Performance tests**: Benchmarks and optimization verification
+- **Threading tests**: Timer operations from various JavaScript contexts
+- **Integration tests**: End-to-end scenarios with networking and file system
 
 ## Contributing
 

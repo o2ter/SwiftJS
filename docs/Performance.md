@@ -1,6 +1,29 @@
 # SwiftJS Performance Guide
 
-This guide covers performance optimization, best practices, and common pitfalls when using SwiftJS.
+This guide covers performance optimization, best practices, and common pitfalls when usin### JavaScript Best Practices
+
+#### Threading Model Understanding
+
+**IMPORTANT**: SwiftJS timer operations called from JavaScript callbacks are thread-safe by design:
+
+```javascript
+// ✅ SAFE - timer creation from Promise callback
+fetch('/api/data').then(response => {
+    setTimeout(() => {
+        console.log('Timer from Promise callback works correctly');
+    }, 100);
+});
+
+// ✅ SAFE - timer operations from any JavaScript context
+Promise.resolve().then(() => {
+    const id = setTimeout(() => console.log('Timer fired'), 100);
+    clearTimeout(id); // Also safe
+});
+```
+
+**Why**: JavaScript callbacks always execute on the JavaScript context's single thread, making timer operations inherently thread-safe when called from JavaScript code.
+
+#### Variable Declarations in Performance TestswiftJS.
 
 ## Table of Contents
 
