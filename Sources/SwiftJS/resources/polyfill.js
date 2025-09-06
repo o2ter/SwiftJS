@@ -67,7 +67,10 @@
       const isAbsolute = segments[0] && segments[0].startsWith('/');
       const result = parts.join(this.sep);
 
-      return isAbsolute ? '/' + result : result || '.';
+      if (isAbsolute) {
+        return '/' + result;
+      }
+      return result || '.';
     }
 
     static resolve(...segments) {
@@ -104,7 +107,7 @@
           } else if (!isAbsolute) {
             normalizedParts.push('..');
           }
-        } else if (part !== '.') {
+        } else if (part !== '.' && part !== '') {
           normalizedParts.push(part);
         }
       }
@@ -145,7 +148,11 @@
       const basename = this.basename(path);
       const lastDot = basename.lastIndexOf('.');
 
-      if (lastDot === -1 || lastDot === 0) return '';
+      // Return empty string for:
+      // - No dot found
+      // - Dot at the start of filename (hidden files like .gitignore)
+      // - Dot at the end of filename (like "file.")
+      if (lastDot === -1 || lastDot === 0 || lastDot === basename.length - 1) return '';
       return basename.substring(lastDot);
     }
 
@@ -787,6 +794,13 @@
 
     // Remove whitespace and validate base64 characters
     base64 = base64.replace(/\s/g, '');
+    
+    // Handle missing padding by adding it
+    const paddingNeeded = 4 - (base64.length % 4);
+    if (paddingNeeded < 4) {
+      base64 += '='.repeat(paddingNeeded);
+    }
+    
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
       throw new Error('Failed to execute \'atob\': The string to be decoded is not correctly encoded.');
     }
@@ -1384,11 +1398,21 @@
       }
 
       // Create File object that references the path for efficient operations
-      return new File([], name, {
+      const file = new File([], name, {
         type: getMimeType(ext),
-        lastModified: stats.lastModified ? stats.lastModified.getTime() : Date.now(),
+        lastModified: stats.mtime || Date.now(),
         [SYMBOLS.filePath]: path
       });
+      
+      // Override the size property to reflect the actual file size
+      Object.defineProperty(file, 'size', {
+        value: stats.size || 0,
+        writable: false,
+        enumerable: true,
+        configurable: false
+      });
+      
+      return file;
     }
   };
 
@@ -1568,6 +1592,12 @@
     }
 
     async #streamingRead(blob, format, encoding, onProgress) {
+      // Check if this is a file with path-based streaming
+      if (blob[SYMBOLS.filePath] && blob.size > 0) {
+        return this.#streamFromFilePath(blob[SYMBOLS.filePath], format, encoding, onProgress);
+      }
+
+      // Standard streaming for in-memory blobs
       const stream = blob.stream();
       const reader = stream.getReader();
       let totalLoaded = 0;
@@ -1640,6 +1670,92 @@
         throw new Error(`Streaming not supported for format: ${format}`);
       } finally {
         reader.releaseLock();
+      }
+    }
+
+    async #streamFromFilePath(filePath, format, encoding, onProgress) {
+      try {
+        // Use Swift's efficient file streaming
+        const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+        if (!handle) {
+          throw new Error(`Failed to open file: ${filePath}`);
+        }
+
+        const chunkSize = 64 * 1024; // 64KB chunks
+        let totalLoaded = 0;
+        
+        if (format === 'arraybuffer') {
+          const chunks = [];
+          
+          while (true) {
+            const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
+            if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
+              break; // EOF
+            }
+            
+            const bytes = new Uint8Array(chunk.typedArrayBytes);
+            chunks.push(bytes);
+            totalLoaded += bytes.byteLength;
+            
+            if (onProgress) {
+              onProgress(totalLoaded);
+            }
+            
+            // Check if aborted during streaming
+            if (this.#readyState !== FileReader.LOADING) {
+              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+              return null;
+            }
+          }
+          
+          __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+          
+          // Combine chunks efficiently
+          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+          const combined = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of chunks) {
+            combined.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+          
+          return combined.buffer;
+          
+        } else if (format === 'text') {
+          const decoder = new TextDecoder(encoding, { stream: true });
+          let result = '';
+          
+          while (true) {
+            const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
+            if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
+              // Finalize decoding
+              result += decoder.decode();
+              break; // EOF
+            }
+            
+            const bytes = new Uint8Array(chunk.typedArrayBytes);
+            result += decoder.decode(bytes, { stream: true });
+            totalLoaded += bytes.byteLength;
+            
+            if (onProgress) {
+              onProgress(totalLoaded);
+            }
+            
+            // Check if aborted during streaming
+            if (this.#readyState !== FileReader.LOADING) {
+              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+              return null;
+            }
+          }
+          
+          __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+          return result;
+        }
+        
+        throw new Error(`Path streaming not supported for format: ${format}`);
+        
+      } catch (error) {
+        throw error;
       }
     }
   };
@@ -2756,6 +2872,12 @@
     *values() {
       for (const [, value] of this.entries()) {
         yield value;
+      }
+    }
+
+    forEach(callback, thisArg) {
+      for (const [key, value] of this.entries()) {
+        callback.call(thisArg, value, key, this);
       }
     }
 
