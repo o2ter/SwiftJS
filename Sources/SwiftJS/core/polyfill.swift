@@ -31,6 +31,7 @@ extension SwiftJS {
         
         var timerId: Int = 0
         var timer: [Int: Timer] = [:]
+        fileprivate let timerLock = NSLock()
         
         var networkRequestId: Int = 0
         var networkRequests: Set<Int> = []
@@ -47,11 +48,15 @@ extension SwiftJS {
         }
         /// Check if there are any active timers
         var hasActiveTimers: Bool {
+            timerLock.lock()
+            defer { timerLock.unlock() }
             return !timer.isEmpty
         }
 
         /// Get count of active timers
         var activeTimerCount: Int {
+            timerLock.lock()
+            defer { timerLock.unlock() }
             return timer.count
         }
         
@@ -119,36 +124,41 @@ extension SwiftJS {
     fileprivate func createTimer(
         callback: SwiftJS.Value, ms: Double, repeats: Bool, arguments: [SwiftJS.Value]
     ) -> Int {
-        let id = self.context.timerId
-        let context = self.context  // Capture the context
-        let runLoop = self.runloop  // Capture the JavaScript context's RunLoop
+        // Generate timer ID atomically
+        context.timerLock.lock()
+        let timerId = context.timerId
+        context.timerId += 1
+        context.timerLock.unlock()
 
-        // Ensure timer is created on the JavaScript context's RunLoop thread
-        runLoop.perform {
-            context.timer[id] = Timer.scheduledTimer(
-                withTimeInterval: ms / 1000,
-                repeats: repeats,
-                block: { _ in
-                    _ = callback.call(withArguments: arguments)
+        // Create timer directly - we're already on the JavaScript context's thread
+        context.timerLock.lock()
+        context.timer[timerId] = Timer.scheduledTimer(
+            withTimeInterval: ms / 1000,
+            repeats: repeats,
+            block: { _ in
+                _ = callback.call(withArguments: arguments)
 
-                    // Auto-cleanup non-repeating timers (setTimeout)
-                    if !repeats {
-                        let timer = context.timer.removeValue(forKey: id)
-                        timer?.invalidate()
-                    }
+                // Auto-cleanup non-repeating timers (setTimeout)
+                if !repeats {
+                    self.context.timerLock.lock()
+                    let timer = self.context.timer.removeValue(forKey: timerId)
+                    self.context.timerLock.unlock()
+                    timer?.invalidate()
                 }
-            )
-        }
+            }
+        )
+        context.timerLock.unlock()
 
-        self.context.timerId += 1
-        return id
+        return timerId
     }
     
     fileprivate func removeTimer(identifier: Int) {
-        let timer = self.context.timer.removeValue(forKey: identifier)
+        // Remove timer directly - we're already on the JavaScript context's thread
+        context.timerLock.lock()
+        let timer = context.timer.removeValue(forKey: identifier)
+        context.timerLock.unlock()
         timer?.invalidate()
     }
-    
     /// Start tracking a network request and return its ID
     public func startNetworkRequest() -> Int {
         return self.context.startNetworkRequest()

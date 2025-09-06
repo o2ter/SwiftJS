@@ -106,6 +106,35 @@ runLoop.perform {
 - `setTimeout`/`setInterval` called from fetch callbacks must schedule timers on the correct RunLoop
 - Without `runLoop.perform`, timers created from async callbacks will never execute
 
+**CRITICAL Threading Insight - JavaScript Callback Context:**
+When JavaScript callback functions (like setTimeout, setInterval callbacks) are executed by JavaScriptCore, they **always run on the JavaScript context's single thread**. This means:
+
+```swift
+// When called from JavaScript callbacks - ALREADY thread-safe:
+// - setTimeout/setInterval callback functions
+// - Promise then/catch/finally callbacks  
+// - Event handler callbacks
+// - Timer fire callbacks
+
+// These contexts are ALREADY on JavaScriptCore thread:
+self.globalObject["setTimeout"] = .init(in: self) { arguments, _ in
+    // This closure runs on JavaScript thread - no runLoop.perform needed
+    // Can safely access context.timer directly
+    // JSContext.current() is always available and correct
+}
+```
+
+**Threading Rules Summary:**
+- **FROM JavaScript callbacks:** Direct access is safe (already on correct thread)
+- **FROM Swift Task/async contexts:** Must use `runLoop.perform { }`
+- **FROM Network completion handlers:** Must use `runLoop.perform { }`
+- **Timer fire callbacks:** Always safe (scheduled on correct RunLoop)
+
+**Code Simplification Implications:**
+- Timer creation functions called from JavaScript don't need `runLoop.perform`
+- Can use `JSContext.current()` safely in JavaScript callback contexts
+- Only external async operations need threading protection
+
 ### Resource Bundle Access
 JavaScript resources are bundled and accessed via `Bundle.module`:
 ```swift
