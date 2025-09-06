@@ -35,7 +35,6 @@ import AsyncHTTPClient
 final class StreamController: @unchecked Sendable {
     private let context: JSContext
     private let progressHandler: JSValue
-    private let lock = NSLock()
 
     init(context: JSContext, progressHandler: JSValue) {
         self.context = context
@@ -43,9 +42,6 @@ final class StreamController: @unchecked Sendable {
     }
 
     func enqueue(_ chunk: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-
         // Call progress handler if provided - ensure we call on the JSContext's thread
         guard !chunk.isEmpty else { return }
         
@@ -189,7 +185,7 @@ final class NIOHTTPClient: @unchecked Sendable {
         
         // Stream response body in a detached task to avoid data races
         let controller = streamController
-        Task.detached { @Sendable in
+        Task.detached {
             do {
                 for try await buffer in response.body {
                     let data = Data(buffer: buffer)
