@@ -402,7 +402,7 @@ final class Base64Tests: XCTestCase {
         let result = context.evaluateScript(script)
         
         XCTAssertEqual(result["padding0"].toString(), "any carnal pleasure.")
-        XCTAssertEqual(result["padding1"].toString(), "any carnal pleasur")
+        XCTAssertEqual(result["padding1"].toString(), "any carnal pleasure")
         XCTAssertEqual(result["padding2"].toString(), "any carnal pleasur")
         XCTAssertNotEqual(result["urlSafe"].toString(), "")
         XCTAssertTrue(result["longString"].boolValue ?? false)

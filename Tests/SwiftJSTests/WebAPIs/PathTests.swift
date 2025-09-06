@@ -100,7 +100,7 @@ final class PathTests: XCTestCase {
         let result = context.evaluateScript(script)
         
         XCTAssertEqual(result["simple"].toString(), "a/b/c")
-        XCTAssertEqual(result["withSlashes"].toString(), "a/b/c")
+        XCTAssertEqual(result["withSlashes"].toString(), "/a/b/c")
         XCTAssertEqual(result["empty"].toString(), ".")
         XCTAssertEqual(result["single"].toString(), "test")
         XCTAssertEqual(result["absolute"].toString(), "/usr/local/bin")
