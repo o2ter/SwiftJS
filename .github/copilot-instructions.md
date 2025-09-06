@@ -222,6 +222,33 @@ When running any command or task as an AI agent:
 - Ask for user confirmation before attempting alternative approaches
 - **Never run alternative commands while a failed task is still running or in an unknown state**
 
+## Streaming Architecture Guidelines
+
+### **CRITICAL:** Streaming Implementation Principles
+When implementing or modifying Blob, File, and HTTP operations, follow these principles to maintain memory-efficient streaming:
+
+1. **NEVER call blob.arrayBuffer() in streaming contexts**
+   - Always use blob.stream() and process chunks individually
+   - Large files (GB+) will cause memory exhaustion otherwise
+
+2. **File objects with filePath use Swift FileSystem streaming APIs**
+   - createFileHandle() + readFileHandleChunk() for true disk streaming
+   - Never load entire file into memory before streaming
+
+3. **HTTP uploads use streaming body, not buffered body**
+   - Pass ReadableStream directly to URLRequest
+   - Avoid await body.arrayBuffer() for uploads
+
+4. **TextDecoder streaming for text operations**
+   - Use { stream: true } to handle encoding boundaries across chunks
+   - Accumulate text progressively, not all-at-once
+
+5. **Response body streaming pipes blob.stream() directly**
+   - No intermediate arrayBuffer() materialization
+   - Preserve memory-efficient chunk processing
+
+**FUTURE DEVELOPERS:** If you find yourself calling .arrayBuffer() in streaming code, you're probably doing it wrong. Use .stream() and process chunks.
+
 ## Critical Testing Patterns
 
 ### Performance Testing with `measure` Blocks
