@@ -1957,7 +1957,12 @@
         if (this.#aborted) return;
 
         if (error) {
-
+          // Clear timeout on error
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          this.#handleError(error);
         } else if (chunk.length > 0) {
           // Accumulate chunks for partial response access
           const newData = new Uint8Array(accumulatedData.length + chunk.length);
@@ -2084,17 +2089,6 @@
 
       // Set final response data based on responseType
       this.#setResponseData(accumulatedData);
-      this.#setReadyState(XMLHttpRequest.DONE);
-      this.#dispatchEvent('load');
-      this.#dispatchEvent('loadend');
-    }
-
-    #handleResponse(result, accumulatedData) {
-      if (this.#aborted || this.readyState === XMLHttpRequest.DONE) return;
-
-      // If we have accumulated data from progress, use it; otherwise use result.data
-      const finalData = accumulatedData || result.data;
-      this.#setResponseData(finalData);
       this.#setReadyState(XMLHttpRequest.DONE);
       this.#dispatchEvent('load');
       this.#dispatchEvent('loadend');
@@ -2867,7 +2861,8 @@
       if (aborted || !responseBodyController) return;
 
       if (error) {
-
+        responseBodyController.error(error);
+        responseBodyController = null;
       } else if (chunk.length > 0) {
         responseBodyController.enqueue(chunk);
       } else {
