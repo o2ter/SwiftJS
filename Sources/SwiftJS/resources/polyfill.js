@@ -1956,7 +1956,9 @@
       const progressHandler = (chunk, error) => {
         if (this.#aborted) return;
 
-        if (chunk && chunk.length > 0) {
+        if (error) {
+
+        } else if (chunk.length > 0) {
           // Accumulate chunks for partial response access
           const newData = new Uint8Array(accumulatedData.length + chunk.length);
           newData.set(accumulatedData);
@@ -1977,9 +1979,7 @@
           if (this.onprogress) {
             this.onprogress.call(this, progressEvent);
           }
-        }
-
-        if (chunk.length === 0 && !this.#aborted) {
+        } else {
           // Clear timeout on completion
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -2866,10 +2866,11 @@
     const progressHandler = function (chunk, error) {
       if (aborted || !responseBodyController) return;
 
-      if (chunk && chunk.length > 0) {
+      if (error) {
+
+      } else if (chunk.length > 0) {
         responseBodyController.enqueue(chunk);
-      }
-      if (chunk.length === 0) {
+      } else {
         responseBodyController.close();
         responseBodyController = null;
       }
