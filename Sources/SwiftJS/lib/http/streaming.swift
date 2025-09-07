@@ -35,12 +35,10 @@ import AsyncHTTPClient
 final class StreamController: @unchecked Sendable {
     private let context: JSContext
     private let progressHandler: JSValue
-    private let rejectHandler: JSValue?
 
-    init(context: JSContext, progressHandler: JSValue, rejectHandler: JSValue? = nil) {
+    init(context: JSContext, progressHandler: JSValue) {
         self.context = context
         self.progressHandler = progressHandler
-        self.rejectHandler = rejectHandler
     }
 
     func enqueue(_ chunk: Data) {
@@ -51,25 +49,21 @@ final class StreamController: @unchecked Sendable {
             buffer in
             chunk.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: chunk.count)
         }
-        // Call progress handler with data chunk and completion status (false = not complete)
+        // Call progress handler with data chunk and no error
         progressHandler.call(withArguments: [uint8Array, false])
     }
 
     func error(_ error: Error) {
-        // Communicate error to JavaScript by rejecting the promise if reject handler is available
-        if let rejectHandler = rejectHandler {
-            let jsError = JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
-            rejectHandler.call(withArguments: [jsError])
-        }
         // Also call progressHandler with error indicator (empty chunk + completion)
         // This allows the JavaScript polyfill to handle cleanup if needed
         let emptyArray = JSValue.uint8Array(count: 0, in: context) { _ in }
-        progressHandler.call(withArguments: [emptyArray, true])
+        let jsError = JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
+        progressHandler.call(withArguments: [emptyArray, jsError])
     }
 
     func close() {
         let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
-        progressHandler.call(withArguments: [emptyArray, true])
+        progressHandler.call(withArguments: [emptyArray, false])
     }
 }
 

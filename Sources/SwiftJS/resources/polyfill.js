@@ -1953,7 +1953,7 @@
         }, this.timeout);
       }
 
-      const progressHandler = (chunk, isComplete) => {
+      const progressHandler = (chunk, error) => {
         if (this.#aborted) return;
 
         if (chunk && chunk.length > 0) {
@@ -1979,7 +1979,7 @@
           }
         }
 
-        if (isComplete && !this.#aborted) {
+        if (chunk.length === 0 && !this.#aborted) {
           // Clear timeout on completion
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -2863,13 +2863,13 @@
     }
 
     // Use progress handler to stream response data
-    const progressHandler = function (chunk, isComplete) {
+    const progressHandler = function (chunk, error) {
       if (aborted || !responseBodyController) return;
 
       if (chunk && chunk.length > 0) {
         responseBodyController.enqueue(chunk);
       }
-      if (isComplete) {
+      if (chunk.length === 0) {
         responseBodyController.close();
         responseBodyController = null;
       }
