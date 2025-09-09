@@ -249,6 +249,17 @@ JavaScript timers integrate with the current RunLoop via `VirtualMachine.runloop
   - **NEVER use fallback methods to bypass test cases** - if tests are failing, fix the implementation or the tests, don't circumvent them
   - **No test shortcuts or workarounds** - all tests must pass legitimately through proper implementation
 
+## Temporary debug code — remove before committing
+
+**CRITICAL:** Always remove all temporary debug code and artifacts before committing or opening a pull request. This includes but is not limited to:
+- ad-hoc print/log statements (e.g., `print`, `console.log`),
+- temporary debug flags or switches left enabled,
+- throwaway test harness scripts placed outside the proper `Tests/` directory,
+- helper files placed in `.temp/` that were only intended for local debugging, and
+- large commented-out blocks or shortcuts that were added solely to debug an issue.
+
+If durable debugging helpers are necessary, extract them into clearly documented utility modules, gate them behind explicit feature flags, and add a note in the changelist documenting why they remain. Never leave transient debug code in main branches or release builds.
+
 ## AI Agent Guidelines
 
 ### Implementation Verification
