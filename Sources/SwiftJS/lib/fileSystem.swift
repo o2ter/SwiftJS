@@ -107,7 +107,7 @@ extension FileHandle: @unchecked Sendable {}
 
     func readFileData(_ path: String) -> JSValue? {
         do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .alwaysMapped)
             let context = JSContext.current()!
 
             // Create a Uint8Array in JavaScript
