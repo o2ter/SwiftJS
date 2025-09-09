@@ -292,6 +292,10 @@ extension FileHandle: @unchecked Sendable {}
             try fileHandle.seek(toOffset: UInt64(offset))
             let data = try fileHandle.read(upToCount: length) ?? Data()
 
+            if data.isEmpty {
+                return nil  // EOF
+            }
+
             let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
                 data.copyBytes(to: buffer, count: data.count)
             }
