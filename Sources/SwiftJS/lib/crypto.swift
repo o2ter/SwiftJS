@@ -34,9 +34,9 @@ import JavaScriptCore
 
   func randomBytes(_ length: Int) -> JSValue
 
-  func createHash(_ algorithm: String) -> JSHash
+  func createHash(_ algorithm: String) -> JSDigest
 
-  func createHamc(_ algorithm: String, _ secret: JSValue) -> JSHash?
+  func createHamc(_ algorithm: String, _ secret: JSValue) -> JSDigest?
 }
 
 extension JSCrypto {
@@ -66,33 +66,33 @@ extension JSCrypto {
 
 extension JSCrypto {
 
-  func createHash(_ algorithm: String) -> JSHash {
+  func createHash(_ algorithm: String) -> JSDigest {
     switch algorithm {
-    case "md5": return JSHash(Insecure.MD5())
-    case "sha1": return JSHash(Insecure.SHA1())
-    case "sha256": return JSHash(SHA256())
-    case "sha384": return JSHash(SHA384())
-    case "sha512": return JSHash(SHA512())
+    case "md5": return JSDigest(Insecure.MD5())
+    case "sha1": return JSDigest(Insecure.SHA1())
+    case "sha256": return JSDigest(SHA256())
+    case "sha384": return JSDigest(SHA384())
+    case "sha512": return JSDigest(SHA512())
     default:
       let context = JSContext.current()!
       context.exception = JSValue(
         newErrorFromMessage: "Unknown hash algorithm: \(algorithm)", in: context)
-      return JSHash(SHA256())  // Return a default hash to satisfy protocol, but exception is set
+      return JSDigest(SHA256())  // Return a default hash to satisfy protocol, but exception is set
     }
   }
 }
 
 extension JSCrypto {
 
-  func createHamc(_ algorithm: String, _ secret: JSValue) -> JSHash? {
+  func createHamc(_ algorithm: String, _ secret: JSValue) -> JSDigest? {
     guard secret.isTypedArray else { return nil }
     let key = SymmetricKey(data: secret.typedArrayBytes)
     switch algorithm {
-    case "md5": return JSHash(HMAC<Insecure.MD5>(key: key))
-    case "sha1": return JSHash(HMAC<Insecure.SHA1>(key: key))
-    case "sha256": return JSHash(HMAC<SHA256>(key: key))
-    case "sha384": return JSHash(HMAC<SHA384>(key: key))
-    case "sha512": return JSHash(HMAC<SHA512>(key: key))
+    case "md5": return JSDigest(HMAC<Insecure.MD5>(key: key))
+    case "sha1": return JSDigest(HMAC<Insecure.SHA1>(key: key))
+    case "sha256": return JSDigest(HMAC<SHA256>(key: key))
+    case "sha384": return JSDigest(HMAC<SHA384>(key: key))
+    case "sha512": return JSDigest(HMAC<SHA512>(key: key))
     default: return nil
     }
   }
