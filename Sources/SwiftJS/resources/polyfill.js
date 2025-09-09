@@ -1393,6 +1393,21 @@
     return combined;
   }
 
+  // Helper: normalize various chunk shapes into a Uint8Array
+  function toUint8Array(value) {
+    if (value == null) return new Uint8Array(0);
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    // Some native bridges expose typedArrayBytes-like objects
+    if (value && value.typedArrayBytes) return new Uint8Array(value.typedArrayBytes);
+    try {
+      return new Uint8Array(value);
+    } catch (e) {
+      return new Uint8Array(0);
+    }
+  }
+
   // Helper: consume a ReadableStreamDefaultReader and return an ArrayBuffer
   // options: { onProgress: (loaded)=>void, shouldAbort: ()=>boolean }
   async function readAllArrayBufferFromReader(reader, options = {}) {
@@ -1404,7 +1419,7 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+        const bytes = toUint8Array(value);
         chunks.push(bytes);
         totalLength += bytes.byteLength;
         if (onProgress) onProgress(totalLength);
@@ -1430,7 +1445,7 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+        const bytes = toUint8Array(value);
         result += decoder.decode(bytes, { stream: true });
         if (onProgress) onProgress(bytes.byteLength);
         if (shouldAbort && shouldAbort()) {
@@ -2709,8 +2724,30 @@
 
     if (request.body) {
       if (request.body instanceof ReadableStream) {
-        // Pass the stream directly to SwiftNIO for true streaming
-        bodyStream = request.body;
+        // Wrap user-provided ReadableStream to ensure it yields ArrayBuffer chunks
+        const sourceStream = request.body;
+        bodyStream = new ReadableStream({
+          async start(controller) {
+            const reader = sourceStream.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const bytes = toUint8Array(value);
+                // Enqueue Uint8Array so the native JSStreamReader can detect typed arrays
+                controller.enqueue(bytes);
+              }
+              controller.close();
+            } catch (err) {
+              controller.error(err);
+            } finally {
+              try { reader.releaseLock(); } catch (e) { }
+            }
+          },
+          cancel(reason) {
+            try { sourceStream.cancel && sourceStream.cancel(reason); } catch (e) { }
+          }
+        });
       } else if (request.body instanceof FormData) {
         const multipart = request.body[SYMBOLS.formDataToMultipart]();
         urlRequest.httpBody = multipart.body;
@@ -2735,10 +2772,45 @@
           );
         }
       } else if (request.body instanceof Blob) {
-        // Use streaming upload for Blob bodies
-        bodyStream = request.body.stream();
-        if (!request.headers.has('Content-Type') && request.body.type) {
-          urlRequest.setValueForHTTPHeaderField(request.body.type, 'Content-Type');
+        // For small blobs, use a fast-path and buffer into memory to set as httpBody.
+        // For larger blobs, stream to native using ReadableStream. This preserves
+        // behavior for small uploads and avoids subtle streaming contract regressions.
+        const blob = request.body;
+        if (!request.headers.has('Content-Type') && blob.type) {
+          urlRequest.setValueForHTTPHeaderField(blob.type, 'Content-Type');
+        }
+
+        const SMALL_BLOB_FAST_PATH = 64 * 1024; // 64KB
+        if (typeof blob.size === 'number' && blob.size <= SMALL_BLOB_FAST_PATH) {
+          // Buffer small blob entirely and send as httpBody
+          const buffer = await blob.arrayBuffer();
+          urlRequest.httpBody = new Uint8Array(buffer);
+        } else {
+          // Stream large blobs to native. Wrap the blob.stream() so the
+          // produced stream yields Uint8Array chunks (native bridge expects typed arrays).
+          const sourceStream = blob.stream();
+          bodyStream = new ReadableStream({
+            async start(controller) {
+              const reader = sourceStream.getReader();
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const bytes = toUint8Array(value);
+                  // Enqueue Uint8Array so the native JSStreamReader can detect typed arrays
+                  controller.enqueue(bytes);
+                }
+                controller.close();
+              } catch (err) {
+                controller.error(err);
+              } finally {
+                try { reader.releaseLock(); } catch (e) { }
+              }
+            },
+            cancel(reason) {
+              try { sourceStream.cancel && sourceStream.cancel(reason); } catch (e) { }
+            }
+          });
         }
       } else if (typeof request.body === 'string') {
         urlRequest.httpBody = request.body;
@@ -2825,6 +2897,8 @@
         headers: result.allHeaderFields,
         url: result.url || request.url
       });
+
+      // response created
 
       // Handle redirect option
       if (response.status >= 300 && response.status < 400) {
