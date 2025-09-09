@@ -49,7 +49,6 @@ extension FileHandle: @unchecked Sendable {}
 
     // Streaming methods for efficient file reading
     func getFileSize(_ path: String) -> Int
-    func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue?
     func createFileHandle(_ path: String) -> String?
     func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue?
     func closeFileHandle(_ handle: String)
@@ -276,33 +275,6 @@ extension FileHandle: @unchecked Sendable {}
             return (attributes[.size] as? NSNumber)?.intValue ?? 0
         } catch {
             return 0
-        }
-    }
-
-    func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue? {
-        guard let context = JSContext.current() else { return nil }
-
-        guard let fileHandle = FileHandle(forReadingAtPath: path) else {
-            return nil
-        }
-
-        defer { fileHandle.closeFile() }
-
-        do {
-            try fileHandle.seek(toOffset: UInt64(offset))
-            let data = try fileHandle.read(upToCount: length) ?? Data()
-
-            if data.isEmpty {
-                return nil  // EOF
-            }
-
-            let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                data.copyBytes(to: buffer, count: data.count)
-            }
-            return uint8Array
-        } catch {
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-            return nil
         }
     }
 
