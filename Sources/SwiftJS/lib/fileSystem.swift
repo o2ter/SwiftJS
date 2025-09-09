@@ -25,8 +25,9 @@
 
 import JavaScriptCore
 import Foundation
+import NIOFileSystem
 
-extension FileHandle: @unchecked Sendable {}
+extension Foundation.FileHandle: @unchecked Sendable {}
 
 @objc protocol JSFileSystemExport: JSExport {
     func homeDirectory() -> String
