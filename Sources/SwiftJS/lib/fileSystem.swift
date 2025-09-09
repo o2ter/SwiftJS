@@ -25,7 +25,6 @@
 
 import JavaScriptCore
 import Foundation
-import NIOFileSystem
 
 extension Foundation.FileHandle: @unchecked Sendable {}
 
@@ -50,9 +49,10 @@ extension Foundation.FileHandle: @unchecked Sendable {}
 
     // Streaming methods for efficient file reading
     func getFileSize(_ path: String) -> Int
-    func createFileHandle(_ path: String) -> String?
-    func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue?
-    func closeFileHandle(_ handle: String)
+    // Use Int handles; return -1 to indicate failure (JS-side should check for -1)
+    func createFileHandle(_ path: String) -> Int
+    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue?
+    func closeFileHandle(_ handle: Int)
 }
 
 @objc final class JSFileSystem: NSObject, JSFileSystemExport {
@@ -279,21 +279,21 @@ extension Foundation.FileHandle: @unchecked Sendable {}
         }
     }
 
-    func createFileHandle(_ path: String) -> String? {
+    func createFileHandle(_ path: String) -> Int {
         guard let fileHandle = FileHandle(forReadingAtPath: path) else {
-            return nil
+            return -1
         }
 
         context.handleLock.lock()
         defer { context.handleLock.unlock() }
 
         context.handleCounter += 1
-        let handleId = "handle_\(context.handleCounter)"
+        let handleId = context.handleCounter
         context.openFileHandles[handleId] = fileHandle
         return handleId
     }
 
-    func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue? {
+    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
         self.context.handleLock.lock()
@@ -319,11 +319,11 @@ extension Foundation.FileHandle: @unchecked Sendable {}
         }
     }
 
-    func closeFileHandle(_ handle: String) {
+    func closeFileHandle(_ handle: Int) {
         context.handleLock.lock()
         defer { context.handleLock.unlock() }
 
-        if let fileHandle = context.openFileHandles.removeValue(forKey: handle) {
+        if handle >= 0, let fileHandle = context.openFileHandles.removeValue(forKey: handle) {
             fileHandle.closeFile()
         }
     }

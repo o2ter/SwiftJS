@@ -1322,13 +1322,14 @@
   // createFileHandle/readFileHandleChunk/closeFileHandle pattern used in several
   // places in the polyfill.
   function createFileReadableStream(filePath, chunkSize = 64 * 1024) {
-    let handle = null;
+    // Native handles use -1 to indicate failure
+    let handle = -1;
 
     return new ReadableStream({
       start(controller) {
         try {
           handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
-          if (!handle) {
+          if (handle === -1 || handle < 0) {
             controller.error(new Error(`Failed to open file: ${filePath}`));
             return;
           }
@@ -1341,9 +1342,9 @@
               const bytes = toUint8Array(chunk);
 
               if (!bytes || bytes.length === 0) {
-                if (handle) {
+                if (handle >= 0) {
                   __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-                  handle = null;
+                  handle = -1;
                 }
                 controller.close();
                 return;
@@ -1353,9 +1354,9 @@
               // Continue asynchronously to avoid blocking
               setTimeout(readNext, 0);
             } catch (err) {
-              if (handle) {
+              if (handle >= 0) {
                 try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
-                handle = null;
+                handle = -1;
               }
               controller.error(err);
             }
@@ -1363,18 +1364,18 @@
 
           readNext();
         } catch (err) {
-          if (handle) {
+          if (handle >= 0) {
             try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
-            handle = null;
+            handle = -1;
           }
           controller.error(err);
         }
       },
 
       cancel() {
-        if (handle) {
+        if (handle >= 0) {
           try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
-          handle = null;
+          handle = -1;
         }
       }
     });

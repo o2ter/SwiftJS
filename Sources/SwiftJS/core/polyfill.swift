@@ -38,7 +38,7 @@ extension SwiftJS {
         private let networkLock = NSLock()
 
         // File handle management for continuous reading
-        var openFileHandles: [String: FileHandle] = [:]
+        var openFileHandles: [Int: FileHandle] = [:]
         var handleCounter = 0
         let handleLock = NSLock()
 
