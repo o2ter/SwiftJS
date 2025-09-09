@@ -1,5 +1,5 @@
 //
-//  crypto.swift
+//  random.swift
 //
 //  The MIT License
 //  Copyright (c) 2021 - 2025 O2ter Limited. All rights reserved.
@@ -26,19 +26,23 @@
 import Crypto
 import JavaScriptCore
 
-@objc protocol JSCryptoExport: JSExport {
+extension JSCrypto {
 
-  func randomUUID() -> String
+  func randomUUID() -> String {
+    let uuid = UUID()
+    return .init(uuid.uuidString)
+  }
 
-  func getRandomValues(_ buffer: JSValue) -> JSValue
+  func getRandomValues(_ buffer: JSValue) -> JSValue {
+    guard buffer.isTypedArray else { return buffer }
+    let bytes = buffer.typedArrayMutableBytes
+    _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, bytes.baseAddress!)
+    return buffer
+  }
 
-  func randomBytes(_ length: Int) -> JSValue
-
-  func createHash(_ algorithm: String) -> JSDigest
-
-  func createHamc(_ algorithm: String, _ secret: JSValue) -> JSDigest?
-}
-
-@objc final class JSCrypto: NSObject, JSCryptoExport {
-
+  func randomBytes(_ length: Int) -> JSValue {
+    return .uint8Array(count: length, in: JSContext.current()) { bytes in
+      _ = SecRandomCopyBytes(kSecRandomDefault, length, bytes.baseAddress!)
+    }
+  }
 }
