@@ -289,14 +289,8 @@ extension FileHandle: @unchecked Sendable {}
         defer { fileHandle.closeFile() }
 
         do {
-            let data: Data
-            if #available(macOS 10.15, iOS 13.0, *) {
-                try fileHandle.seek(toOffset: UInt64(offset))
-                data = try fileHandle.read(upToCount: length) ?? Data()
-            } else {
-                fileHandle.seek(toFileOffset: UInt64(offset))
-                data = fileHandle.readData(ofLength: length)
-            }
+            try fileHandle.seek(toOffset: UInt64(offset))
+            let data = try fileHandle.read(upToCount: length) ?? Data()
 
             let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
                 data.copyBytes(to: buffer, count: data.count)
@@ -332,12 +326,7 @@ extension FileHandle: @unchecked Sendable {}
         guard let fileHandle = fileHandle else { return nil }
 
         do {
-            let data: Data
-            if #available(macOS 10.15, iOS 13.0, *) {
-                data = try fileHandle.read(upToCount: length) ?? Data()
-            } else {
-                data = fileHandle.readData(ofLength: length)
-            }
+            let data = try fileHandle.read(upToCount: length) ?? Data()
 
             if data.isEmpty {
                 return nil  // EOF
