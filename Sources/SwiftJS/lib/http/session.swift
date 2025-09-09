@@ -64,15 +64,27 @@ import NIOHTTP1
                 // Start network request tracking
                 let networkId = self.context.startNetworkRequest()
 
-                defer {
-                    // End network request tracking
-                    self.context.endNetworkRequest(networkId)
+                // Ensure endNetworkRequest is called exactly once when the response stream finishes or errors
+                var didEndNetworkRequest = false
+                let endLock = NSLock()
+                let endOnce = {
+                    endLock.lock()
+                    let shouldEnd = !didEndNetworkRequest
+                    if shouldEnd {
+                        didEndNetworkRequest = true
+                    }
+                    endLock.unlock()
+
+                    if shouldEnd {
+                        self.context.endNetworkRequest(networkId)
+                    }
                 }
 
                 do {
                     let streamController = StreamController(
                         context: context,
-                        progressHandler: progressHandler
+                        progressHandler: progressHandler,
+                        onComplete: endOnce
                     )
 
                     let responseHead: HTTPResponseHead
@@ -120,6 +132,8 @@ import NIOHTTP1
                     // resolve with JSURLResponse directly
                     resolve?.call(withArguments: [JSValue(object: jsResponse, in: context)!])
                 } catch {
+                    // Ensure we end network tracking on error as well
+                    endOnce()
                     reject?.call(withArguments: [
                         JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
                     ])

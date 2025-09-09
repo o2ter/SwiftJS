@@ -35,10 +35,12 @@ import AsyncHTTPClient
 final class StreamController: @unchecked Sendable {
     private let context: JSContext
     private let progressHandler: JSValue
+    private let onComplete: () -> Void
 
-    init(context: JSContext, progressHandler: JSValue) {
+    init(context: JSContext, progressHandler: JSValue, onComplete: @escaping () -> Void) {
         self.context = context
         self.progressHandler = progressHandler
+        self.onComplete = onComplete
     }
 
     func enqueue(_ chunk: Data) {
@@ -59,11 +61,15 @@ final class StreamController: @unchecked Sendable {
         let emptyArray = JSValue.uint8Array(count: 0, in: context) { _ in }
         let jsError = JSValue(newErrorFromMessage: error.localizedDescription, in: context)!
         progressHandler.call(withArguments: [emptyArray, jsError])
+        // Notify completion/error to caller
+        onComplete()
     }
 
     func close() {
         let emptyArray = JSValue.uint8Array(count: 0, in: self.context) { _ in }
         progressHandler.call(withArguments: [emptyArray, false])
+        // Notify completion when stream closed
+        onComplete()
     }
 }
 
