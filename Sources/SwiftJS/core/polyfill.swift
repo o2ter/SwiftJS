@@ -37,6 +37,11 @@ extension SwiftJS {
         var networkRequests: Set<Int> = []
         private let networkLock = NSLock()
 
+        // File handle management for continuous reading
+        var openFileHandles: [String: FileHandle] = [:]
+        var handleCounter = 0
+        let handleLock = NSLock()
+
         var logger: @Sendable (LogLevel, [SwiftJS.Value]) -> Void
         
         init() {
@@ -96,6 +101,14 @@ extension SwiftJS {
                 timer.invalidate()
             }
             timer = [:]
+            
+            // Close all open file handles
+            handleLock.lock()
+            for (_, fileHandle) in openFileHandles {
+                fileHandle.closeFile()
+            }
+            openFileHandles.removeAll()
+            handleLock.unlock()
         }
     }
 }
@@ -380,7 +393,7 @@ extension SwiftJS {
             "processControl": .init(JSProcessControl(), in: self),
             "deviceInfo": .init(JSDeviceInfo(), in: self),
             "bundleInfo": .init(JSBundleInfo.main, in: self),
-            "FileSystem": .init(JSFileSystem.self, in: self),
+            "FileSystem": .init(JSFileSystem(context: self.context), in: self),
             "URLSession": .init(JSURLSession(context: self.context), in: self),
             "URLRequest": .init(JSURLRequest.self, in: self),
             "URLResponse": .init(JSURLResponse.self, in: self)

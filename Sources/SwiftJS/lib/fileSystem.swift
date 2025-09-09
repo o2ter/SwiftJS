@@ -29,53 +29,61 @@ import Foundation
 extension FileHandle: @unchecked Sendable {}
 
 @objc protocol JSFileSystemExport: JSExport {
-    static var homeDirectory: String { get }
-    static var temporaryDirectory: String { get }
-    static var currentDirectoryPath: String { get }
-    static func changeCurrentDirectoryPath(_ path: String) -> Bool
-    static func removeItem(_ path: String)
-    static func readFile(_ path: String) -> String?
-    static func readFileData(_ path: String) -> JSValue?
-    static func writeFile(_ path: String, _ content: String) -> Bool
-    static func writeFileData(_ path: String, _ data: JSValue) -> Bool
-    static func readDirectory(_ path: String) -> [String]?
-    static func createDirectory(_ path: String) -> Bool
-    static func exists(_ path: String) -> Bool
-    static func isDirectory(_ path: String) -> Bool
-    static func isFile(_ path: String) -> Bool
-    static func stat(_ path: String) -> JSValue?
-    static func copyItem(_ sourcePath: String, _ destinationPath: String) -> Bool
-    static func moveItem(_ sourcePath: String, _ destinationPath: String) -> Bool
+    func homeDirectory() -> String
+    func temporaryDirectory() -> String
+    func currentDirectoryPath() -> String
+    func changeCurrentDirectoryPath(_ path: String) -> Bool
+    func removeItem(_ path: String)
+    func readFile(_ path: String) -> String?
+    func readFileData(_ path: String) -> JSValue?
+    func writeFile(_ path: String, _ content: String) -> Bool
+    func writeFileData(_ path: String, _ data: JSValue) -> Bool
+    func readDirectory(_ path: String) -> [String]?
+    func createDirectory(_ path: String) -> Bool
+    func exists(_ path: String) -> Bool
+    func isDirectory(_ path: String) -> Bool
+    func isFile(_ path: String) -> Bool
+    func stat(_ path: String) -> JSValue?
+    func copyItem(_ sourcePath: String, _ destinationPath: String) -> Bool
+    func moveItem(_ sourcePath: String, _ destinationPath: String) -> Bool
 
     // Streaming methods for efficient file reading
-    static func getFileSize(_ path: String) -> Int
-    static func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue?
-    static func createFileHandle(_ path: String) -> String?
-    static func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue?
-    static func closeFileHandle(_ handle: String)
+    func getFileSize(_ path: String) -> Int
+    func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue?
+    func createFileHandle(_ path: String) -> String?
+    func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue?
+    func closeFileHandle(_ handle: String)
 }
 
 @objc final class JSFileSystem: NSObject, JSFileSystemExport {
     
-    static var homeDirectory: String {
+    // Store reference to SwiftJS context for file handle management
+    private let context: SwiftJS.Context
+
+    init(context: SwiftJS.Context) {
+        self.context = context
+        super.init()
+    }
+
+    func homeDirectory() -> String {
         return NSHomeDirectory()
     }
     
-    static var temporaryDirectory: String {
+    func temporaryDirectory() -> String {
         let tempDir = NSTemporaryDirectory()
         // Remove trailing slash if present
         return tempDir.hasSuffix("/") ? String(tempDir.dropLast()) : tempDir
     }
     
-    static var currentDirectoryPath: String {
+    func currentDirectoryPath() -> String {
         return FileManager.default.currentDirectoryPath
     }
     
-    static func changeCurrentDirectoryPath(_ path: String) -> Bool {
+    func changeCurrentDirectoryPath(_ path: String) -> Bool {
         return FileManager.default.changeCurrentDirectoryPath(path)
     }
     
-    static func removeItem(_ path: String) {
+    func removeItem(_ path: String) {
         do {
             try FileManager.default.removeItem(atPath: path)
         } catch {
@@ -88,7 +96,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
     
-    static func readFile(_ path: String) -> String? {
+    func readFile(_ path: String) -> String? {
         do {
             return try String(contentsOfFile: path, encoding: .utf8)
         } catch {
@@ -98,7 +106,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func readFileData(_ path: String) -> JSValue? {
+    func readFileData(_ path: String) -> JSValue? {
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let context = JSContext.current()!
@@ -115,7 +123,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func writeFile(_ path: String, _ content: String) -> Bool {
+    func writeFile(_ path: String, _ content: String) -> Bool {
         do {
             try content.write(toFile: path, atomically: true, encoding: .utf8)
             return true
@@ -126,7 +134,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func writeFileData(_ path: String, _ data: JSValue) -> Bool {
+    func writeFileData(_ path: String, _ data: JSValue) -> Bool {
         do {
             let context = JSContext.current()!
 
@@ -155,7 +163,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func readDirectory(_ path: String) -> [String]? {
+    func readDirectory(_ path: String) -> [String]? {
         do {
             return try FileManager.default.contentsOfDirectory(atPath: path)
         } catch {
@@ -165,7 +173,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func createDirectory(_ path: String) -> Bool {
+    func createDirectory(_ path: String) -> Bool {
         do {
             try FileManager.default.createDirectory(
                 atPath: path,
@@ -180,23 +188,23 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func exists(_ path: String) -> Bool {
+    func exists(_ path: String) -> Bool {
         return FileManager.default.fileExists(atPath: path)
     }
 
-    static func isDirectory(_ path: String) -> Bool {
+    func isDirectory(_ path: String) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && isDirectory.boolValue
     }
 
-    static func isFile(_ path: String) -> Bool {
+    func isFile(_ path: String) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && !isDirectory.boolValue
     }
 
-    static func stat(_ path: String) -> JSValue? {
+    func stat(_ path: String) -> JSValue? {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: path)
             let context = JSContext.current()!
@@ -239,7 +247,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func copyItem(_ sourcePath: String, _ destinationPath: String) -> Bool {
+    func copyItem(_ sourcePath: String, _ destinationPath: String) -> Bool {
         do {
             try FileManager.default.copyItem(atPath: sourcePath, toPath: destinationPath)
             return true
@@ -250,7 +258,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func moveItem(_ sourcePath: String, _ destinationPath: String) -> Bool {
+    func moveItem(_ sourcePath: String, _ destinationPath: String) -> Bool {
         do {
             try FileManager.default.moveItem(atPath: sourcePath, toPath: destinationPath)
             return true
@@ -262,7 +270,7 @@ extension FileHandle: @unchecked Sendable {}
     }
 
     // Streaming methods for efficient file reading
-    static func getFileSize(_ path: String) -> Int {
+    func getFileSize(_ path: String) -> Int {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: path)
             return (attributes[.size] as? NSNumber)?.intValue ?? 0
@@ -271,7 +279,7 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue? {
+    func readFileChunk(_ path: String, _ offset: Int, _ length: Int) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
         guard let fileHandle = FileHandle(forReadingAtPath: path) else {
@@ -300,31 +308,26 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    // File handle management for continuous reading
-    nonisolated(unsafe) private static var openFileHandles: [String: FileHandle] = [:]
-    nonisolated(unsafe) private static var handleCounter = 0
-    private static let handleLock = NSLock()
-
-    static func createFileHandle(_ path: String) -> String? {
+    func createFileHandle(_ path: String) -> String? {
         guard let fileHandle = FileHandle(forReadingAtPath: path) else {
             return nil
         }
 
-        handleLock.lock()
-        defer { handleLock.unlock() }
+        context.handleLock.lock()
+        defer { context.handleLock.unlock() }
 
-        handleCounter += 1
-        let handleId = "handle_\(handleCounter)"
-        openFileHandles[handleId] = fileHandle
+        context.handleCounter += 1
+        let handleId = "handle_\(context.handleCounter)"
+        context.openFileHandles[handleId] = fileHandle
         return handleId
     }
 
-    static func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue? {
+    func readFileHandleChunk(_ handle: String, _ length: Int) -> JSValue? {
         guard let context = JSContext.current() else { return nil }
 
-        handleLock.lock()
-        let fileHandle = openFileHandles[handle]
-        handleLock.unlock()
+        self.context.handleLock.lock()
+        let fileHandle = self.context.openFileHandles[handle]
+        self.context.handleLock.unlock()
 
         guard let fileHandle = fileHandle else { return nil }
 
@@ -350,11 +353,11 @@ extension FileHandle: @unchecked Sendable {}
         }
     }
 
-    static func closeFileHandle(_ handle: String) {
-        handleLock.lock()
-        defer { handleLock.unlock() }
+    func closeFileHandle(_ handle: String) {
+        context.handleLock.lock()
+        defer { context.handleLock.unlock() }
 
-        if let fileHandle = openFileHandles.removeValue(forKey: handle) {
+        if let fileHandle = context.openFileHandles.removeValue(forKey: handle) {
             fileHandle.closeFile()
         }
     }
