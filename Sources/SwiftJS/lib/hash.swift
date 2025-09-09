@@ -26,7 +26,7 @@
 import Crypto
 import JavaScriptCore
 
-protocol HashProtocol {
+protocol DigestProtocol {
 
   associatedtype Digest: ContiguousBytes
 
@@ -35,27 +35,27 @@ protocol HashProtocol {
   func finalize() -> Self.Digest
 }
 
-extension Insecure.MD5: HashProtocol {
+extension Insecure.MD5: DigestProtocol {
 
 }
 
-extension Insecure.SHA1: HashProtocol {
+extension Insecure.SHA1: DigestProtocol {
 
 }
 
-extension SHA256: HashProtocol {
+extension SHA256: DigestProtocol {
 
 }
 
-extension SHA384: HashProtocol {
+extension SHA384: DigestProtocol {
 
 }
 
-extension SHA512: HashProtocol {
+extension SHA512: DigestProtocol {
 
 }
 
-extension HMAC: HashProtocol {
+extension HMAC: DigestProtocol {
 
   typealias Digest = Self.MAC
 
@@ -75,9 +75,9 @@ extension HMAC: HashProtocol {
 
 @objc final class JSDigest: NSObject, JSDigestExport {
 
-  var base: any HashProtocol
+  var base: any DigestProtocol
 
-  init(_ hash: any HashProtocol) {
+  init(_ hash: any DigestProtocol) {
     self.base = hash
   }
 
