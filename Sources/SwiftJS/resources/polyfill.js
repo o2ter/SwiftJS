@@ -256,7 +256,8 @@
       } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
         return this.writeBytes(path, data);
       } else if (data instanceof Blob) {
-        const bytes = new Uint8Array(await data.arrayBuffer());
+        const buffer = await data.arrayBuffer();
+        const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
         return this.writeBytes(path, bytes);
       } else {
         // Convert to string
@@ -646,7 +647,7 @@
       }
       const bytes = buffer instanceof Uint8Array
         ? buffer
-        : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       __APPLE_SPEC__.crypto.getRandomValues(bytes);
       return buffer;
     }
@@ -1161,7 +1162,7 @@
         if (part?.__asyncBlob) {
           const blob = await part[SYMBOLS.blobPlaceholderPromise];
           const buffer = await blob.arrayBuffer();
-          resolved.push(new Uint8Array(buffer));
+          resolved.push(new Uint8Array(buffer, 0, buffer.byteLength));
         } else {
           resolved.push(part);
         }
@@ -1187,12 +1188,12 @@
         if (typeof part === 'string') {
           chunk = encoder.encode(part);
         } else if (part instanceof ArrayBuffer) {
-          chunk = new Uint8Array(part);
+          chunk = new Uint8Array(part, 0, part.byteLength);
         } else if (ArrayBuffer.isView(part)) {
           chunk = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
         } else if (part instanceof Blob) {
           const buffer = await part.arrayBuffer();
-          chunk = new Uint8Array(buffer);
+          chunk = new Uint8Array(buffer, 0, buffer.byteLength);
         } else if (part != null) {
           chunk = encoder.encode(String(part));
         } else {
@@ -1279,7 +1280,7 @@
             const encoded = encoder.encode(part);
             await streamBuffer(encoded, controller, chunkSize);
           } else if (part instanceof ArrayBuffer) {
-            await streamBuffer(new Uint8Array(part), controller, chunkSize);
+            await streamBuffer(new Uint8Array(part, 0, part.byteLength), controller, chunkSize);
           } else if (ArrayBuffer.isView(part)) {
             await streamBuffer(new Uint8Array(part.buffer, part.byteOffset, part.byteLength), controller, chunkSize);
           } else if (part instanceof Blob) {
@@ -1287,10 +1288,11 @@
             const nestedStream = part.stream();
             const reader = nestedStream.getReader();
             try {
-              while (true) {
+                while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                controller.enqueue(value);
+                const _v = toUint8Array(value);
+                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
               }
             } finally {
               reader.releaseLock();
@@ -1335,10 +1337,8 @@
             try {
               const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
 
-              // Interpret chunk shape: prefer existing Uint8Array, fall back to typedArrayBytes
-              const bytes = chunk instanceof Uint8Array
-                ? chunk
-                : (chunk && chunk.typedArrayBytes ? new Uint8Array(chunk.typedArrayBytes) : new Uint8Array(chunk));
+              // Interpret chunk shape using toUint8Array (prefer views, avoid copies)
+              const bytes = toUint8Array(chunk);
 
               if (!bytes || bytes.length === 0) {
                 if (handle) {
@@ -1397,11 +1397,17 @@
   function toUint8Array(value) {
     if (value == null) return new Uint8Array(0);
     if (value instanceof Uint8Array) return value;
-    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (value instanceof ArrayBuffer) return new Uint8Array(value, 0, value.byteLength);
     if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    // Some native bridges expose typedArrayBytes-like objects
-    if (value && value.typedArrayBytes) return new Uint8Array(value.typedArrayBytes);
+    // Some native bridges expose typedArrayBytes-like objects (ArrayBuffer or ArrayBufferView)
+    if (value && value.typedArrayBytes) {
+      const tab = value.typedArrayBytes;
+      if (tab instanceof ArrayBuffer) return new Uint8Array(tab, 0, tab.byteLength);
+      if (ArrayBuffer.isView(tab)) return new Uint8Array(tab.buffer, tab.byteOffset, tab.byteLength);
+      try { return new Uint8Array(tab); } catch (e) { /* fallthrough */ }
+    }
     try {
+      // last-resort: attempt to construct a Uint8Array (may copy)
       return new Uint8Array(value);
     } catch (e) {
       return new Uint8Array(0);
@@ -2481,10 +2487,11 @@
               const reader = blobStream.getReader();
               try {
                 while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  controller.enqueue(value);
-                }
+                const { done, value } = await reader.read();
+                if (done) break;
+                const _v = toUint8Array(value);
+                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
+              }
               } finally {
                 reader.releaseLock();
               }
@@ -2494,10 +2501,8 @@
               controller.enqueue(bytes);
             } else if (body instanceof Uint8Array) {
               controller.enqueue(body);
-            } else if (body instanceof ArrayBuffer) {
-              controller.enqueue(new Uint8Array(body));
-            } else if (ArrayBuffer.isView(body)) {
-              controller.enqueue(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+            } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+              controller.enqueue(toUint8Array(body));
             } else if (body instanceof FormData) {
               const multipart = body[SYMBOLS.formDataToMultipart]();
               const encoder = new TextEncoder();
@@ -2733,9 +2738,9 @@
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const bytes = toUint8Array(value);
-                // Enqueue Uint8Array so the native JSStreamReader can detect typed arrays
-                controller.enqueue(bytes);
+                const _v = toUint8Array(value);
+                // Enqueue a Uint8Array view (no copy) so the native JSStreamReader can detect typed arrays
+                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
               }
               controller.close();
             } catch (err) {
@@ -2772,50 +2777,40 @@
           );
         }
       } else if (request.body instanceof Blob) {
-        // For small blobs, use a fast-path and buffer into memory to set as httpBody.
-        // For larger blobs, stream to native using ReadableStream. This preserves
-        // behavior for small uploads and avoids subtle streaming contract regressions.
+        // Stream Blob bodies to native. Wrap the blob.stream() so the
+        // produced stream yields Uint8Array chunks (native bridge expects typed arrays).
         const blob = request.body;
         if (!request.headers.has('Content-Type') && blob.type) {
           urlRequest.setValueForHTTPHeaderField(blob.type, 'Content-Type');
         }
 
-        const SMALL_BLOB_FAST_PATH = 64 * 1024; // 64KB
-        if (typeof blob.size === 'number' && blob.size <= SMALL_BLOB_FAST_PATH) {
-          // Buffer small blob entirely and send as httpBody
-          const buffer = await blob.arrayBuffer();
-          urlRequest.httpBody = new Uint8Array(buffer);
-        } else {
-          // Stream large blobs to native. Wrap the blob.stream() so the
-          // produced stream yields Uint8Array chunks (native bridge expects typed arrays).
-          const sourceStream = blob.stream();
-          bodyStream = new ReadableStream({
-            async start(controller) {
-              const reader = sourceStream.getReader();
-              try {
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  const bytes = toUint8Array(value);
-                  // Enqueue Uint8Array so the native JSStreamReader can detect typed arrays
-                  controller.enqueue(bytes);
-                }
-                controller.close();
-              } catch (err) {
-                controller.error(err);
-              } finally {
-                try { reader.releaseLock(); } catch (e) { }
+        const sourceStream = blob.stream();
+        bodyStream = new ReadableStream({
+          async start(controller) {
+            const reader = sourceStream.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const _v = toUint8Array(value);
+                // Enqueue a Uint8Array view (no copy) so the native JSStreamReader can detect typed arrays
+                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
               }
-            },
-            cancel(reason) {
-              try { sourceStream.cancel && sourceStream.cancel(reason); } catch (e) { }
+              controller.close();
+            } catch (err) {
+              controller.error(err);
+            } finally {
+              try { reader.releaseLock(); } catch (e) { }
             }
-          });
-        }
+          },
+          cancel(reason) {
+            try { sourceStream.cancel && sourceStream.cancel(reason); } catch (e) { }
+          }
+        });
       } else if (typeof request.body === 'string') {
         urlRequest.httpBody = request.body;
       } else if (request.body instanceof ArrayBuffer || ArrayBuffer.isView(request.body)) {
-        urlRequest.httpBody = new Uint8Array(request.body);
+        urlRequest.httpBody = toUint8Array(request.body);
       }
     }
 
