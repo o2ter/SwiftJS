@@ -70,10 +70,20 @@ extension SwiftJS {
     public var activeNetworkRequestCount: Int {
         return self.context.activeNetworkRequestCount
     }
+    
+    /// Check if there are any active file handles
+    public var hasActiveFileHandles: Bool {
+        return self.context.hasActiveFileHandles
+    }
 
-    /// Check if there are any active async operations (timers or network)
+    /// Get the count of active file handles
+    public var activeFileHandleCount: Int {
+        return self.context.activeFileHandleCount
+    }
+
+    /// Check if there are any active async operations (timers, network, or file handles)
     public var hasActiveOperations: Bool {
-        return hasActiveTimers || hasActiveNetworkRequests
+        return hasActiveTimers || hasActiveNetworkRequests || hasActiveFileHandles
     }
 }
 

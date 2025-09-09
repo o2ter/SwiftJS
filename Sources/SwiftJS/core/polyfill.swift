@@ -78,6 +78,20 @@ extension SwiftJS {
             defer { networkLock.unlock() }
             return networkRequests.count
         }
+        
+        /// Check if there are any active file handles
+        var hasActiveFileHandles: Bool {
+            handleLock.lock()
+            defer { handleLock.unlock() }
+            return !openFileHandles.isEmpty
+        }
+
+        /// Get count of active file handles
+        var activeFileHandleCount: Int {
+            handleLock.lock()
+            defer { handleLock.unlock() }
+            return openFileHandles.count
+        }
 
         /// Start tracking a network request
         func startNetworkRequest() -> Int {
