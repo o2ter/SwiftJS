@@ -406,15 +406,7 @@
 
         close() {
           // Combine all chunks and write to file
-          let totalLength = 0;
-          chunks.forEach(chunk => totalLength += chunk.byteLength);
-
-          const combined = new Uint8Array(totalLength);
-          let offset = 0;
-          chunks.forEach(chunk => {
-            combined.set(chunk, offset);
-            offset += chunk.byteLength;
-          });
+          const combined = combineChunksToUint8Array(chunks);
 
           if (!__APPLE_SPEC__.FileSystem.writeFileData(path, combined)) {
             throw new Error(`Failed to write file: ${path}`);
@@ -1218,7 +1210,9 @@
         offset += chunk.byteLength;
       }
 
-      return result.buffer;
+      // Use helper to combine chunks
+      const combined = combineChunksToUint8Array(chunks);
+      return combined.buffer;
     }
 
     async text() {
@@ -1321,6 +1315,135 @@
     }
   };
 
+  // Reusable helper: create a ReadableStream that streams a file from the native
+  // FileSystem using the Swift file handle APIs. This centralizes the
+  // createFileHandle/readFileHandleChunk/closeFileHandle pattern used in several
+  // places in the polyfill.
+  function createFileReadableStream(filePath, chunkSize = 64 * 1024) {
+    let handle = null;
+
+    return new ReadableStream({
+      start(controller) {
+        try {
+          handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+          if (!handle) {
+            controller.error(new Error(`Failed to open file: ${filePath}`));
+            return;
+          }
+
+          const readNext = () => {
+            try {
+              const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
+
+              // Interpret chunk shape: prefer existing Uint8Array, fall back to typedArrayBytes
+              const bytes = chunk instanceof Uint8Array
+                ? chunk
+                : (chunk && chunk.typedArrayBytes ? new Uint8Array(chunk.typedArrayBytes) : new Uint8Array(chunk));
+
+              if (!bytes || bytes.length === 0) {
+                if (handle) {
+                  __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+                  handle = null;
+                }
+                controller.close();
+                return;
+              }
+
+              controller.enqueue(bytes);
+              // Continue asynchronously to avoid blocking
+              setTimeout(readNext, 0);
+            } catch (err) {
+              if (handle) {
+                try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+                handle = null;
+              }
+              controller.error(err);
+            }
+          };
+
+          readNext();
+        } catch (err) {
+          if (handle) {
+            try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+            handle = null;
+          }
+          controller.error(err);
+        }
+      },
+
+      cancel() {
+        if (handle) {
+          try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+          handle = null;
+        }
+      }
+    });
+  }
+
+  // Helper: combine an array of Uint8Array chunks into a single Uint8Array
+  function combineChunksToUint8Array(chunks) {
+    const totalLength = chunks.reduce((sum, c) => sum + (c ? c.byteLength : 0), 0);
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      if (!chunk) continue;
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return combined;
+  }
+
+  // Helper: consume a ReadableStreamDefaultReader and return an ArrayBuffer
+  // options: { onProgress: (loaded)=>void, shouldAbort: ()=>boolean }
+  async function readAllArrayBufferFromReader(reader, options = {}) {
+    const { onProgress, shouldAbort } = options;
+    const chunks = [];
+    let totalLength = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+        chunks.push(bytes);
+        totalLength += bytes.byteLength;
+        if (onProgress) onProgress(totalLength);
+        if (shouldAbort && shouldAbort()) {
+          return null;
+        }
+      }
+      const combined = combineChunksToUint8Array(chunks);
+      return combined.buffer;
+    } finally {
+      try { reader.releaseLock(); } catch (e) { }
+    }
+  }
+
+  // Helper: consume a ReadableStreamDefaultReader and return a decoded string
+  // options: { encoding: 'utf-8', onProgress: (loaded)=>void, shouldAbort: ()=>boolean }
+  async function readAllTextFromReader(reader, options = {}) {
+    const { encoding = 'utf-8', onProgress, shouldAbort } = options;
+    const decoder = new TextDecoder(encoding, { stream: true });
+    let result = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+        result += decoder.decode(bytes, { stream: true });
+        if (onProgress) onProgress(bytes.byteLength);
+        if (shouldAbort && shouldAbort()) {
+          return null;
+        }
+      }
+      result += decoder.decode();
+      return result;
+    } finally {
+      try { reader.releaseLock(); } catch (e) { }
+    }
+  }
+
   // File - extends Blob with file metadata
   globalThis.File = class File extends Blob {
     #name;
@@ -1349,51 +1472,7 @@
       // If this File was created from a file system path, stream directly from disk using Swift
       const filePath = this.#filePath;
       if (filePath && __APPLE_SPEC__.FileSystem.exists(filePath) && __APPLE_SPEC__.FileSystem.isFile(filePath)) {
-        return new ReadableStream({
-          start(controller) {
-            // Create a file handle for efficient streaming through Swift
-            const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
-            if (!handle) {
-              controller.error(new Error(`Failed to open file: ${filePath}`));
-              return;
-            }
-
-            const chunkSize = 64 * 1024; // 64KB chunks
-
-            const readNextChunk = () => {
-              try {
-                // Read chunk directly from Swift file handle
-                const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
-
-                if (!chunk || chunk.length === 0) {
-                  // EOF reached
-                  __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-                  controller.close();
-                  return;
-                }
-
-                // chunk is already a Uint8Array from Swift
-                controller.enqueue(chunk);
-
-                // Continue reading asynchronously
-                setTimeout(readNextChunk, 0);
-              } catch (error) {
-                __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-                controller.error(error);
-              }
-            };
-
-            readNextChunk();
-          },
-
-          cancel() {
-            // Clean up file handle if stream is cancelled
-            const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
-            if (handle) {
-              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-            }
-          }
-        });
+        return createFileReadableStream(filePath);
       }
 
       // For in-memory File objects, use the parent Blob stream() method
@@ -1687,159 +1766,55 @@
       // Standard streaming for in-memory blobs
       const stream = blob.stream();
       const reader = stream.getReader();
-      let totalLoaded = 0;
-
       try {
         if (format === 'arraybuffer') {
-          // For arraybuffer, we can progressively build the result
-          const chunks = [];
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            chunks.push(value);
-            totalLoaded += value.byteLength;
-
-            if (onProgress) {
-              onProgress(totalLoaded);
-            }
-
-            // Check if aborted during streaming
-            if (this.#readyState !== FileReader.LOADING) {
-              return null;
-            }
-          }
-
-          // Combine chunks efficiently
-          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-          const combined = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            combined.set(chunk, offset);
-            offset += chunk.byteLength;
-          }
-
-          return combined.buffer;
-
+          const buffer = await readAllArrayBufferFromReader(reader, {
+            onProgress: (loaded) => { if (onProgress) onProgress(loaded); },
+            shouldAbort: () => this.#readyState !== FileReader.LOADING
+          });
+          return buffer;
         } else if (format === 'text') {
-          // For text, we need to accumulate due to encoding boundaries
-          // Use streaming TextDecoder for better memory efficiency
-          const decoder = new TextDecoder(encoding, { stream: true });
-          let result = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) {
-              // Finalize decoding
-              result += decoder.decode();
-              break;
-            }
-
-            // Decode chunk with streaming enabled (handles partial characters)
-            result += decoder.decode(value, { stream: true });
-            totalLoaded += value.byteLength;
-
-            if (onProgress) {
-              onProgress(totalLoaded);
-            }
-
-            // Check if aborted during streaming
-            if (this.#readyState !== FileReader.LOADING) {
-              return null;
-            }
-          }
-
-          return result;
+          const text = await readAllTextFromReader(reader, {
+            encoding,
+            onProgress: (loaded) => { if (onProgress) onProgress(loaded); },
+            shouldAbort: () => this.#readyState !== FileReader.LOADING
+          });
+          return text;
         }
 
         throw new Error(`Streaming not supported for format: ${format}`);
       } finally {
-        reader.releaseLock();
+        try { reader.releaseLock(); } catch (e) { }
       }
     }
 
     async #streamFromFilePath(filePath, format, encoding, onProgress) {
       try {
-        // Use Swift's efficient file streaming
-        const handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
-        if (!handle) {
-          throw new Error(`Failed to open file: ${filePath}`);
-        }
-
-        const chunkSize = 64 * 1024; // 64KB chunks
+        // Create a file-backed readable stream and consume it according to format
+        const stream = createFileReadableStream(filePath);
+        const reader = stream.getReader();
         let totalLoaded = 0;
 
-        if (format === 'arraybuffer') {
-          const chunks = [];
-
-          while (true) {
-            const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
-            if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
-              break; // EOF
-            }
-
-            const bytes = new Uint8Array(chunk.typedArrayBytes);
-            chunks.push(bytes);
-            totalLoaded += bytes.byteLength;
-
-            if (onProgress) {
-              onProgress(totalLoaded);
-            }
-
-            // Check if aborted during streaming
-            if (this.#readyState !== FileReader.LOADING) {
-              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-              return null;
-            }
+        try {
+          if (format === 'arraybuffer') {
+            const buffer = await readAllArrayBufferFromReader(reader, {
+              onProgress: (loaded) => { if (onProgress) onProgress(loaded); },
+              shouldAbort: () => this.#readyState !== FileReader.LOADING
+            });
+            return buffer;
+          } else if (format === 'text') {
+            const text = await readAllTextFromReader(reader, {
+              encoding,
+              onProgress: (loaded) => { if (onProgress) onProgress(loaded); },
+              shouldAbort: () => this.#readyState !== FileReader.LOADING
+            });
+            return text;
           }
 
-          __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-
-          // Combine chunks efficiently
-          const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-          const combined = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            combined.set(chunk, offset);
-            offset += chunk.byteLength;
-          }
-
-          return combined.buffer;
-
-        } else if (format === 'text') {
-          const decoder = new TextDecoder(encoding, { stream: true });
-          let result = '';
-
-          while (true) {
-            const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
-            if (!chunk || !chunk.typedArrayBytes || chunk.typedArrayBytes.length === 0) {
-              // Finalize decoding
-              result += decoder.decode();
-              break; // EOF
-            }
-
-            const bytes = new Uint8Array(chunk.typedArrayBytes);
-            result += decoder.decode(bytes, { stream: true });
-            totalLoaded += bytes.byteLength;
-
-            if (onProgress) {
-              onProgress(totalLoaded);
-            }
-
-            // Check if aborted during streaming
-            if (this.#readyState !== FileReader.LOADING) {
-              __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-              return null;
-            }
-          }
-
-          __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
-          return result;
+          throw new Error(`Path streaming not supported for format: ${format}`);
+        } finally {
+          try { reader.releaseLock(); } catch (e) { }
         }
-
-        throw new Error(`Path streaming not supported for format: ${format}`);
 
       } catch (error) {
         throw error;
@@ -2172,14 +2147,7 @@
     }
 
     #getStatusText(status) {
-      const statusTexts = {
-        100: 'Continue', 101: 'Switching Protocols',
-        200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content',
-        300: 'Multiple Choices', 301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
-        400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
-        500: 'Internal Server Error', 502: 'Bad Gateway', 503: 'Service Unavailable'
-      };
-      return statusTexts[status] || '';
+      return getStatusText(status);
     }
   };
 
@@ -2643,30 +2611,10 @@
         return new TextEncoder().encode(multipart.body).buffer;
       }
 
-      // Read from stream
+      // Read from stream using helper
       const reader = this.#bodyStream.getReader();
-      const chunks = [];
-      let totalLength = 0;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          totalLength += value.byteLength;
-        }
-
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          result.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-
-        return result.buffer;
-      } finally {
-        reader.releaseLock();
-      }
+      const buffer = await readAllArrayBufferFromReader(reader, { onProgress: null });
+      return buffer || new ArrayBuffer(0);
     }
 
     async blob() {
@@ -2697,30 +2645,10 @@
         return multipart.body;
       }
 
-      // Read from stream manually instead of calling arrayBuffer() which would check bodyUsed again
+      // Read from stream using helper for text decoding
       const reader = this.#bodyStream.getReader();
-      const chunks = [];
-      let totalLength = 0;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          totalLength += value.byteLength;
-        }
-
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          result.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-
-        return new TextDecoder().decode(result);
-      } finally {
-        reader.releaseLock();
-      }
+      const text = await readAllTextFromReader(reader, { encoding: 'utf-8' });
+      return text || '';
     }
   };
 
