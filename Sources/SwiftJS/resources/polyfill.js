@@ -2739,8 +2739,8 @@
                 const { done, value } = await reader.read();
                 if (done) break;
                 const _v = toUint8Array(value);
-                // Enqueue a Uint8Array view (no copy) so the native JSStreamReader can detect typed arrays
-                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
+                // Enqueue a copied Uint8Array to ensure stable backing memory for native reader
+                controller.enqueue(new Uint8Array(_v));
               }
               controller.close();
             } catch (err) {
@@ -2784,6 +2784,7 @@
           urlRequest.setValueForHTTPHeaderField(blob.type, 'Content-Type');
         }
 
+        // Wrap the blob's native stream and copy each chunk before enqueueing
         const sourceStream = blob.stream();
         bodyStream = new ReadableStream({
           async start(controller) {
@@ -2793,8 +2794,8 @@
                 const { done, value } = await reader.read();
                 if (done) break;
                 const _v = toUint8Array(value);
-                // Enqueue a Uint8Array view (no copy) so the native JSStreamReader can detect typed arrays
-                controller.enqueue(new Uint8Array(_v.buffer, _v.byteOffset, _v.byteLength));
+                // Copy chunk so the native bridge can safely read its bytes
+                controller.enqueue(new Uint8Array(_v));
               }
               controller.close();
             } catch (err) {

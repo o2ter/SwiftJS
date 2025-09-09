@@ -221,7 +221,12 @@ final class JSStreamReader: @unchecked Sendable {
     
     init(stream: JSValue, context: JSContext) {
         self.context = context
-        self.reader = stream.objectForKeyedSubscript("getReader")?.call(withArguments: []) ?? JSValue(nullIn: context)!
+        // Use invokeMethod to preserve the JS 'this' binding when calling getReader
+        if let invoked = stream.invokeMethod("getReader", withArguments: []) {
+            self.reader = invoked
+        } else {
+            self.reader = JSValue(nullIn: context)!
+        }
     }
     
     /// Create an AsyncStream from a JavaScript ReadableStream
@@ -236,8 +241,9 @@ final class JSStreamReader: @unchecked Sendable {
     @MainActor
     private func readAllChunks(continuation: AsyncStream<Data>.Continuation) async {
         while true {
-            guard let readPromise = reader.objectForKeyedSubscript("read")?.call(withArguments: []),
-                  !readPromise.isUndefined else {
+            guard let readPromise = reader.invokeMethod("read", withArguments: []),
+                !readPromise.isUndefined
+            else {
                 continuation.finish()
                 return
             }
@@ -245,8 +251,10 @@ final class JSStreamReader: @unchecked Sendable {
             // Convert JS Promise to Swift async
             do {
                 let result = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<JSValue, Error>) in
-                    let then = readPromise.objectForKeyedSubscript("then")
-                    then?.call(withArguments: [
+                    // Use invokeMethod("then") to preserve the promise as 'this' when calling then
+                    readPromise.invokeMethod(
+                        "then",
+                        withArguments: [
                         JSValue(newFunctionIn: context) { args, this in
                             if !args.isEmpty {
                                 cont.resume(returning: args[0])
