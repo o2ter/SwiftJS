@@ -49,19 +49,23 @@ extension Foundation.FileHandle: @unchecked Sendable {}
 
     // Streaming methods for efficient file reading
     func getFileSize(_ path: String) -> Int
-    // Use Int handles; return -1 to indicate failure (JS-side should check for -1)
-    func createFileHandle(_ path: String) -> Int
-    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue?
-    func closeFileHandle(_ handle: Int)
+    // Promise-based streaming API (non-blocking)
+    // - createFileHandle returns a Promise<number> resolving to handle id or -1 on failure
+    // - readFileHandleChunk returns a Promise<Uint8Array|null> resolving with chunk or null at EOF
+    // - closeFileHandle returns a Promise<void>
+    func createFileHandle(_ path: String) -> JSValue
+    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue
+    func closeFileHandle(_ handle: Int) -> JSValue
 }
 
-@objc final class JSFileSystem: NSObject, JSFileSystemExport {
+@objc final class JSFileSystem: NSObject, JSFileSystemExport, @unchecked Sendable {
     
-    // Store reference to SwiftJS context for file handle management
     private let context: SwiftJS.Context
+    private let runloop: RunLoop
 
-    init(context: SwiftJS.Context) {
+    init(context: SwiftJS.Context, runloop: RunLoop) {
         self.context = context
+        self.runloop = runloop
         super.init()
     }
 
@@ -279,52 +283,97 @@ extension Foundation.FileHandle: @unchecked Sendable {}
         }
     }
 
-    func createFileHandle(_ path: String) -> Int {
-        guard let fileHandle = FileHandle(forReadingAtPath: path) else {
-            return -1
+    func createFileHandle(_ path: String) -> JSValue {
+        guard let jsContext = JSContext.current() else {
+            return JSValue(undefinedIn: JSContext.current() ?? JSContext())
         }
 
-        context.handleLock.lock()
-        defer { context.handleLock.unlock() }
+        return JSValue(newPromiseIn: jsContext) { resolve, _ in
+            // Open file on a background queue to avoid blocking the JS thread
+            DispatchQueue.global().async {
+                if let fileHandle = FileHandle(forReadingAtPath: path) {
+                    // Register the handle in a thread-safe way using the context lock
+                    self.context.handleLock.lock()
+                    self.context.handleCounter += 1
+                    let handleId = self.context.handleCounter
+                    self.context.openFileHandles[handleId] = fileHandle
+                    self.context.handleLock.unlock()
 
-        context.handleCounter += 1
-        let handleId = context.handleCounter
-        context.openFileHandles[handleId] = fileHandle
-        return handleId
-    }
-
-    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue? {
-        guard let context = JSContext.current() else { return nil }
-
-        self.context.handleLock.lock()
-        let fileHandle = self.context.openFileHandles[handle]
-        self.context.handleLock.unlock()
-
-        guard let fileHandle = fileHandle else { return nil }
-
-        do {
-            let data = try fileHandle.read(upToCount: length) ?? Data()
-
-            if data.isEmpty {
-                return nil  // EOF
+                    resolve?.call(withArguments: [
+                        JSValue(double: Double(handleId), in: jsContext)!
+                    ])
+                } else {
+                    resolve?.call(withArguments: [JSValue(double: Double(-1), in: jsContext)!])
+                }
             }
-
-            let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                data.copyBytes(to: buffer, count: data.count)
-            }
-            return uint8Array
-        } catch {
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-            return nil
         }
     }
 
-    func closeFileHandle(_ handle: Int) {
-        context.handleLock.lock()
-        defer { context.handleLock.unlock() }
+    func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue {
+        guard let jsContext = JSContext.current() else {
+            return JSValue(undefinedIn: JSContext.current() ?? JSContext())
+        }
 
-        if handle >= 0, let fileHandle = context.openFileHandles.removeValue(forKey: handle) {
-            fileHandle.closeFile()
+        return JSValue(newPromiseIn: jsContext) { resolve, reject in
+            // Obtain the file handle in a thread-safe way
+            self.context.handleLock.lock()
+            let fileHandle = self.context.openFileHandles[handle]
+            self.context.handleLock.unlock()
+
+            guard let fileHandle = fileHandle else {
+                // Must call resolve on JS thread
+                resolve?.call(withArguments: [JSValue(nullIn: jsContext)!])
+                return
+            }
+
+            // Read from file on a background queue
+            DispatchQueue.global().async {
+                do {
+                    let data = try fileHandle.read(upToCount: length) ?? Data()
+
+                    if data.isEmpty {
+                        // EOF - resolve on JS thread
+                        self.runloop.perform {
+                            resolve?.call(withArguments: [JSValue(nullIn: jsContext)!])
+                        }
+                        return
+                    }
+                    // Create JS typed array and resolve on JS thread
+                    let dataCopy = data  // capture
+                    self.runloop.perform {
+                        let uint8Array = JSValue.uint8Array(count: dataCopy.count, in: jsContext) {
+                            buffer in
+                            dataCopy.copyBytes(
+                                to: buffer.bindMemory(to: UInt8.self), count: dataCopy.count)
+                        }
+                        resolve?.call(withArguments: [uint8Array])
+                    }
+                } catch {
+                    self.runloop.perform {
+                        reject?.call(withArguments: [
+                            JSValue(newErrorFromMessage: "\(error)", in: jsContext)!
+                        ])
+                    }
+                }
+            }
+        }
+    }
+
+    func closeFileHandle(_ handle: Int) -> JSValue {
+        guard let jsContext = JSContext.current() else {
+            return JSValue(undefinedIn: JSContext.current() ?? JSContext())
+        }
+
+        return JSValue(newPromiseIn: jsContext) { resolve, _ in
+            self.context.handleLock.lock()
+            let fileHandle = self.context.openFileHandles.removeValue(forKey: handle)
+            self.context.handleLock.unlock()
+
+            if let fileHandle = fileHandle {
+                DispatchQueue.global().async { fileHandle.closeFile() }
+            }
+
+            resolve?.call(withArguments: [JSValue(undefinedIn: jsContext)!])
         }
     }
 }

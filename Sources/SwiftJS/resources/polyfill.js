@@ -1326,55 +1326,55 @@
     let handle = -1;
 
     return new ReadableStream({
-      start(controller) {
+      // Use async start so we can await Promise-based native APIs without blocking
+      async start(controller) {
         try {
-          handle = __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+          handle = await __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
           if (handle === -1 || handle < 0) {
             controller.error(new Error(`Failed to open file: ${filePath}`));
             return;
           }
 
-          const readNext = () => {
+          while (true) {
             try {
-              const chunk = __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
-
-              // Interpret chunk shape using toUint8Array (prefer views, avoid copies)
+              const chunk = await __APPLE_SPEC__.FileSystem.readFileHandleChunk(handle, chunkSize);
               const bytes = toUint8Array(chunk);
 
+              // EOF: treat null/empty as end of stream
               if (!bytes || bytes.length === 0) {
                 if (handle >= 0) {
-                  __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
+                  await __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
                   handle = -1;
                 }
                 controller.close();
-                return;
+                break;
               }
 
               controller.enqueue(bytes);
-              // Continue asynchronously to avoid blocking
-              setTimeout(readNext, 0);
+              // Yield to event loop to keep things cooperative
+              await new Promise(resolve => setTimeout(resolve, 0));
             } catch (err) {
               if (handle >= 0) {
-                try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+                await __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
                 handle = -1;
               }
               controller.error(err);
+              break;
             }
-          };
-
-          readNext();
+          }
         } catch (err) {
           if (handle >= 0) {
-            try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+            await __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
             handle = -1;
           }
           controller.error(err);
         }
       },
 
-      cancel() {
+      // Allow cancel to asynchronously close native handle
+      async cancel(reason) {
         if (handle >= 0) {
-          try { __APPLE_SPEC__.FileSystem.closeFileHandle(handle); } catch (e) { }
+          await __APPLE_SPEC__.FileSystem.closeFileHandle(handle);
           handle = -1;
         }
       }
