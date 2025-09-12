@@ -510,7 +510,7 @@ final class FormDataTests: XCTestCase {
             XCTAssertTrue(
                 result["hasFormData"].boolValue ?? false, "Response should contain form data")
             XCTAssertEqual(
-                Int(result["status"].numberValue ?? 0), 200, "Should get HTTP 200 response")
+                result["status"].numberValue ?? 0, 200, "Should get HTTP 200 response")
             XCTAssertGreaterThan(
                 result["originalSize"].numberValue ?? 0, 500, "File should have substantial content"
             )
