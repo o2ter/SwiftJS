@@ -2397,8 +2397,18 @@
         return await this.body.arrayBuffer();
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[SYMBOLS.formDataToMultipart]();
-        return new TextEncoder().encode(multipart.body).buffer;
+        // Check if FormData contains streams using internal symbol
+        if (this.body[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams - consume the actual stream
+          const stream = this.body.stream();
+          const reader = stream.getReader();
+          const buffer = await readAllArrayBufferFromReader(reader);
+          return buffer || new ArrayBuffer(0);
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = this.body[SYMBOLS.formDataToMultipart]();
+          return new TextEncoder().encode(multipart.body).buffer;
+        }
       }
       if (this.body instanceof URLSearchParams) {
         return new TextEncoder().encode(this.body.toString()).buffer;
@@ -2437,8 +2447,18 @@
         return await this.body.text();
       }
       if (this.body instanceof FormData) {
-        const multipart = this.body[SYMBOLS.formDataToMultipart]();
-        return multipart.body;
+        // Check if FormData contains streams using internal symbol
+        if (this.body[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams - consume the actual stream
+          const stream = this.body.stream();
+          const reader = stream.getReader();
+          const text = await readAllTextFromReader(reader, { encoding: 'utf-8' });
+          return text || '';
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = this.body[SYMBOLS.formDataToMultipart]();
+          return multipart.body;
+        }
       }
 
       const buffer = await this.arrayBuffer();
@@ -2523,10 +2543,36 @@
             } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
               controller.enqueue(toUint8Array(body));
             } else if (body instanceof FormData) {
-              const multipart = body[SYMBOLS.formDataToMultipart]();
-              const encoder = new TextEncoder();
-              const bytes = encoder.encode(multipart.body);
-              controller.enqueue(bytes);
+              // Check if FormData contains streams using internal symbol
+              if (body[SYMBOLS.formDataHasStreamingValues]()) {
+                // Use streaming interface for FormData with streams - pipe the actual stream
+                const formStream = body.stream();
+                const reader = formStream.getReader();
+
+                // Pump data from FormData stream to response stream
+                const pump = async () => {
+                  try {
+                    while (true) {
+                      const { done, value } = await reader.read();
+                      if (done) break;
+                      controller.enqueue(toUint8Array(value));
+                    }
+                    controller.close();
+                  } catch (error) {
+                    controller.error(error);
+                  } finally {
+                    try { reader.releaseLock(); } catch (e) { }
+                  }
+                };
+                pump();
+                return; // Exit early since we're handling async pumping
+              } else {
+              // Use traditional multipart conversion for FormData without streams
+                const multipart = body[SYMBOLS.formDataToMultipart]();
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(multipart.body);
+                controller.enqueue(bytes);
+              }
             } else {
               // Convert to string and encode
               const encoder = new TextEncoder();
@@ -2646,8 +2692,18 @@
       } else if (this.#originalBody && typeof this.#originalBody === 'string') {
         return new TextEncoder().encode(this.#originalBody).buffer;
       } else if (this.#originalBody instanceof FormData) {
-        const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
-        return new TextEncoder().encode(multipart.body).buffer;
+        // Check if FormData contains streams using internal symbol
+        if (this.#originalBody[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams - consume the actual stream
+          const stream = this.#originalBody.stream();
+          const reader = stream.getReader();
+          const buffer = await readAllArrayBufferFromReader(reader);
+          return buffer || new ArrayBuffer(0);
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
+          return new TextEncoder().encode(multipart.body).buffer;
+        }
       }
 
       // Read from stream using helper
@@ -2680,8 +2736,18 @@
       if (typeof this.#originalBody === 'string') {
         return this.#originalBody;
       } else if (this.#originalBody instanceof FormData) {
-        const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
-        return multipart.body;
+        // Check if FormData contains streams using internal symbol
+        if (this.#originalBody[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams - consume the actual stream
+          const stream = this.#originalBody.stream();
+          const reader = stream.getReader();
+          const text = await readAllTextFromReader(reader, { encoding: 'utf-8' });
+          return text || '';
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = this.#originalBody[SYMBOLS.formDataToMultipart]();
+          return multipart.body;
+        }
       }
 
       // Read from stream using helper for text decoding
@@ -3251,7 +3317,8 @@
     [SYMBOLS.formDataHasStreamingValues]() {
       for (const [, values] of this.#data) {
         for (const item of values) {
-          if (item.type === 'stream') {
+          // Consider streams, blobs, and files as streaming values
+          if (item.type === 'stream' || item.type === 'blob' || item.type === 'file') {
             return true;
           }
         }
