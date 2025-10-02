@@ -26,8 +26,6 @@
 import JavaScriptCore
 import Foundation
 
-extension Foundation.FileHandle: @unchecked Sendable {}
-
 @objc protocol JSFileSystemExport: JSExport {
     func homeDirectory() -> String
     func temporaryDirectory() -> String
