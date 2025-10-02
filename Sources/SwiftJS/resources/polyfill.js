@@ -1870,6 +1870,7 @@
     #responseData = null;
     #responseText = '';
     #upload = new EventTarget();
+    #streamingBody = null;
 
     constructor() {
       super();
@@ -1996,8 +1997,8 @@
 
       const promise = session.httpRequestWithRequest(
         this.#request,
-        null,              // bodyStream 
-        progressHandler   // progressHandler for streaming updates
+        this.#streamingBody,  // Use streaming body if available, otherwise null
+        progressHandler       // progressHandler for streaming updates
       );
 
       promise
@@ -2040,12 +2041,27 @@
       let hasUploadBody = false;
 
       if (body instanceof FormData) {
-        const multipart = body[SYMBOLS.formDataToMultipart]();
-        this.#request.httpBody = multipart.body;
-        if (!this.#requestHeaders['Content-Type']) {
-          this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
+        // Check if FormData contains streams using internal symbol
+        if (body[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams
+          const formStream = body.stream();
+          this.#streamingBody = formStream;
+
+          // Set Content-Type header with the boundary from the stream
+          const boundary = formStream[SYMBOLS.formDataBoundary];
+          if (boundary && !this.#requestHeaders['Content-Type']) {
+            this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${boundary}`);
+          }
+          hasUploadBody = true;
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = body[SYMBOLS.formDataToMultipart]();
+          this.#request.httpBody = multipart.body;
+          if (!this.#requestHeaders['Content-Type']) {
+            this.setRequestHeader('Content-Type', `multipart/form-data; boundary=${multipart.boundary}`);
+          }
+          hasUploadBody = true;
         }
-        hasUploadBody = true;
       } else if (typeof body === 'string') {
         this.#request.httpBody = body;
         if (!this.#requestHeaders['Content-Type']) {
