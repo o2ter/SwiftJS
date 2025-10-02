@@ -4,6 +4,8 @@
   // Private symbols for internal APIs
   const SYMBOLS = {
     formDataToMultipart: Symbol('FormData._toMultipartString'),
+    formDataBoundary: Symbol('FormData._boundary'),
+    formDataHasStreamingValues: Symbol('FormData._hasStreamingValues'),
     blobPlaceholderPromise: Symbol('Blob._placeholderPromise'),
     requestOriginalBody: Symbol('Request._originalBody'),
     streamInternal: Symbol('Stream._internal'),
@@ -2755,12 +2757,29 @@
           }
         });
       } else if (request.body instanceof FormData) {
-        const multipart = request.body[SYMBOLS.formDataToMultipart]();
-        urlRequest.httpBody = multipart.body;
-        urlRequest.setValueForHTTPHeaderField(
-          `multipart/form-data; boundary=${multipart.boundary}`,
-          'Content-Type'
-        );
+        // Check if FormData contains streams using internal symbol
+        if (request.body[SYMBOLS.formDataHasStreamingValues]()) {
+          // Use streaming interface for FormData with streams
+          const formStream = request.body.stream();
+          bodyStream = formStream;
+
+          // Set Content-Type header with the boundary from the stream
+          const boundary = formStream[SYMBOLS.formDataBoundary];
+          if (boundary) {
+            urlRequest.setValueForHTTPHeaderField(
+              `multipart/form-data; boundary=${boundary}`,
+              'Content-Type'
+            );
+          }
+        } else {
+        // Use traditional multipart conversion for FormData without streams
+          const multipart = request.body[SYMBOLS.formDataToMultipart]();
+          urlRequest.httpBody = multipart.body;
+          urlRequest.setValueForHTTPHeaderField(
+            `multipart/form-data; boundary=${multipart.boundary}`,
+            'Content-Type'
+          );
+        }
       } else if (request[SYMBOLS.requestOriginalBody] instanceof URLSearchParams) {
         urlRequest.httpBody = request[SYMBOLS.requestOriginalBody].toString();
         if (!request.headers.has('Content-Type')) {
@@ -3130,6 +3149,12 @@
             value: value,
             filename: filename || 'blob'
           };
+        } else if (value instanceof ReadableStream) {
+          return {
+            type: 'stream',
+            value: value,
+            filename: filename || 'stream'
+          };
         }
       }
       return {
@@ -3206,6 +3231,126 @@
       return this.entries();
     }
 
+    // Internal method exposed via symbol
+    [SYMBOLS.formDataHasStreamingValues]() {
+      for (const [, values] of this.#data) {
+        for (const item of values) {
+          if (item.type === 'stream') {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // Create a ReadableStream for streaming multipart upload
+    stream() {
+      const boundary = '----SwiftJSFormBoundary-' + crypto.randomUUID();
+      const encoder = new TextEncoder();
+      let currentFieldIndex = 0;
+      let currentItemIndex = 0;
+      let currentStreamReader = null;
+      let isComplete = false;
+      const dataEntries = Array.from(this.#data.entries());
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          // Don't add initial boundary here - it will be added in pull
+        },
+
+        async pull(controller) {
+          try {
+            if (isComplete) {
+              controller.close();
+              return;
+            }
+
+            // If we're currently reading from a stream
+            if (currentStreamReader) {
+              const { value, done } = await currentStreamReader.read();
+              if (!done) {
+                controller.enqueue(value);
+                return;
+              } else {
+                // Stream finished, add trailing newline and move to next
+                controller.enqueue(encoder.encode('\r\n'));
+                currentStreamReader = null;
+                currentItemIndex++;
+              }
+            }
+
+            // Process next field/item
+            while (currentFieldIndex < dataEntries.length) {
+              const [key, values] = dataEntries[currentFieldIndex];
+
+              if (currentItemIndex >= values.length) {
+                // Move to next field
+                currentFieldIndex++;
+                currentItemIndex = 0;
+                continue;
+              }
+
+              const item = values[currentItemIndex];
+
+              // Add boundary before each field
+              controller.enqueue(encoder.encode(`--${boundary}\r\n`));
+
+              // Write field headers
+              let headers = `Content-Disposition: form-data; name="${key}"`;
+              if (item.type === 'file' || item.type === 'blob' || item.type === 'stream') {
+                const filename = item.filename || 'blob';
+                headers += `; filename="${filename}"`;
+
+                if (item.type === 'file' || item.type === 'blob') {
+                  const contentType = item.value.type || 'application/octet-stream';
+                  headers += `\r\nContent-Type: ${contentType}`;
+                } else if (item.type === 'stream') {
+                  headers += `\r\nContent-Type: application/octet-stream`;
+                }
+              }
+              headers += '\r\n\r\n';
+              controller.enqueue(encoder.encode(headers));
+
+              // Handle different value types
+              if (item.type === 'stream') {
+                // Start reading from the stream
+                currentStreamReader = item.value.getReader();
+                return; // Will continue reading in next pull
+              } else if (item.type === 'file' || item.type === 'blob') {
+                // Stream the blob/file content
+                const stream = item.value.stream();
+                currentStreamReader = stream.getReader();
+                return; // Will continue reading in next pull
+              } else {
+                // String value - write directly
+                controller.enqueue(encoder.encode(item.value));
+                controller.enqueue(encoder.encode('\r\n'));
+                currentItemIndex++;
+              }
+            }
+
+            // All fields processed - add final boundary
+            controller.enqueue(encoder.encode(`--${boundary}--\r\n`));
+            isComplete = true;
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+
+        cancel() {
+          if (currentStreamReader) {
+            try {
+              currentStreamReader.releaseLock();
+            } catch (e) { }
+          }
+        }
+      });
+
+      // Attach boundary to the stream for Content-Type header
+      stream[SYMBOLS.formDataBoundary] = boundary;
+      return stream;
+    }
+
     [SYMBOLS.formDataToMultipart]() {
       const boundary = '----SwiftJSFormBoundary-' + crypto.randomUUID();
       let result = '';
@@ -3220,6 +3365,12 @@
             result += `Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`;
             result += `Content-Type: ${contentType}\r\n\r\n`;
             result += item.value.arrayBuffer ? '[Binary Data]\r\n' : String(item.value) + '\r\n';
+          } else if (item.type === 'stream') {
+            // Handle streams with placeholder data
+            const filename = item.filename || 'stream';
+            result += `Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`;
+            result += `Content-Type: application/octet-stream\r\n\r\n`;
+            result += '[Stream Data]\r\n';
           } else {
             result += `Content-Disposition: form-data; name="${key}"\r\n\r\n`;
             result += item.value + '\r\n';
