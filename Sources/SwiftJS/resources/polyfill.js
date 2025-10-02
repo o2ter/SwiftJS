@@ -2068,6 +2068,28 @@
           this.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
         }
         hasUploadBody = body.length > 0;
+      } else if (body instanceof URLSearchParams) {
+        // Convert URLSearchParams to application/x-www-form-urlencoded string
+        const formString = body.toString();
+        this.#request.httpBody = formString;
+        if (!this.#requestHeaders['Content-Type']) {
+          this.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        }
+        hasUploadBody = formString.length > 0;
+      } else if (body instanceof Blob) {
+        // Handle Blob by streaming its content
+        if (body.size > 0) {
+          const blobStream = body.stream();
+          this.#streamingBody = blobStream;
+          
+          // Set Content-Type from Blob if available
+          if (body.type && !this.#requestHeaders['Content-Type']) {
+            this.setRequestHeader('Content-Type', body.type);
+          } else if (!this.#requestHeaders['Content-Type']) {
+            this.setRequestHeader('Content-Type', 'application/octet-stream');
+          }
+          hasUploadBody = true;
+        }
       } else if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
         this.#request.httpBody = new Uint8Array(body);
         if (!this.#requestHeaders['Content-Type']) {
