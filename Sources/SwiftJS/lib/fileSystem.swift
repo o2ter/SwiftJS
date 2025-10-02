@@ -47,12 +47,14 @@ import Foundation
 
     // Streaming methods for efficient file reading
     func getFileSize(_ path: String) -> Int
+
     // Promise-based streaming API (non-blocking)
-    // - createFileHandle returns a Promise<number> resolving to handle id or -1 on failure
-    // - readFileHandleChunk returns a Promise<Uint8Array|null> resolving with chunk or null at EOF
-    // - closeFileHandle returns a Promise<void>
+
+    /// - createFileHandle returns a Promise<number> resolving to handle id or -1 on failure
     func createFileHandle(_ path: String) -> JSValue
+    /// - readFileHandleChunk returns a Promise<Uint8Array|null> resolving with chunk or null at EOF
     func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue
+    /// - closeFileHandle returns a Promise<void>
     func closeFileHandle(_ handle: Int) -> JSValue
 }
 
