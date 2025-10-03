@@ -233,6 +233,7 @@
 
     // Write file - async only when dealing with Blob, otherwise synchronous
     static writeFile(path, data, options = {}) {
+      const { encoding = 'utf-8', flags = 'w' } = options;
       if (data instanceof Blob) {
         // Async path for Blob - must await arrayBuffer()
         return (async () => {
