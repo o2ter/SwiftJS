@@ -480,7 +480,7 @@ When implementing or modifying Blob, File, and HTTP operations, follow these pri
    - Large files (GB+) will cause memory exhaustion otherwise
 
 2. **File objects with filePath use Swift FileSystem streaming APIs**
-   - createFileHandle() + readFileHandleChunk() for true disk streaming
+   - createReadFileHandle() + readFileHandleChunk() for true disk streaming
    - Never load entire file into memory before streaming
 
 3. **HTTP uploads use streaming body, not buffered body**

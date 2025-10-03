@@ -1385,7 +1385,7 @@
 
   // Reusable helper: create a ReadableStream that streams a file from the native
   // FileSystem using the Swift file handle APIs. This centralizes the
-  // createFileHandle/readFileHandleChunk/closeFileHandle pattern used in several
+  // createReadFileHandle/readFileHandleChunk/closeFileHandle pattern used in several
   // places in the polyfill.
   function createFileReadableStream(filePath, chunkSize = 64 * 1024) {
     // Native handles use -1 to indicate failure
@@ -1395,7 +1395,7 @@
       // Use async start so we can await Promise-based native APIs without blocking
       async start(controller) {
         try {
-          handle = await __APPLE_SPEC__.FileSystem.createFileHandle(filePath);
+          handle = await __APPLE_SPEC__.FileSystem.createReadFileHandle(filePath);
           if (handle === -1 || handle < 0) {
             controller.error(new Error(`Failed to open file: ${filePath}`));
             return;

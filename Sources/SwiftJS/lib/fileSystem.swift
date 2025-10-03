@@ -52,8 +52,8 @@ import Foundation
 
     // Promise-based streaming API (non-blocking)
 
-    /// - createFileHandle returns a Promise<number> resolving to handle id or -1 on failure
-    func createFileHandle(_ path: String) -> JSValue
+    /// - createReadFileHandle returns a Promise<number> resolving to handle id or -1 on failure
+    func createReadFileHandle(_ path: String) -> JSValue
     /// - readFileHandleChunk returns a Promise<Uint8Array|null> resolving with chunk or null at EOF
     func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue
     /// - closeFileHandle returns a Promise<void>
@@ -373,7 +373,7 @@ import Foundation
         }
     }
 
-    func createFileHandle(_ path: String) -> JSValue {
+    func createReadFileHandle(_ path: String) -> JSValue {
         guard let jsContext = JSContext.current() else {
             return JSValue(undefinedIn: JSContext.current() ?? JSContext())
         }
