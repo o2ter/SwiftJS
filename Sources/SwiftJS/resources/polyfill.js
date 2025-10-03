@@ -479,6 +479,13 @@
       const shouldAppend = flags.includes('a');
       const shouldFailIfExists = flags.includes('x');
 
+      // Validate encoding - TextEncoder only supports UTF-8
+      // Note: Unlike writeFile, we don't support alternate encodings in streams
+      // because we convert chunks progressively and need consistent encoding
+      if (encoding !== 'utf-8' && encoding !== 'utf8') {
+        console.warn(`createWriteStream: encoding '${encoding}' not supported, using 'utf-8'`);
+      }
+
       // Check flags constraints synchronously before creating stream
       if (shouldFailIfExists && this.exists(path)) {
         throw new Error(`File already exists: ${path}`);
