@@ -238,16 +238,17 @@
     static writeFile(path, data, options = {}) {
       const { encoding = 'utf-8', flags = 'w' } = options;
 
-      // Handle flags option - check if file should be appended or overwritten
+      // Parse flags into bit flags: bit 0 = append, bit 1 = exclusive
       const shouldAppend = flags.includes('a');
       const shouldFailIfExists = flags.includes('x');
+      const nativeFlags = (shouldAppend ? 1 : 0) | (shouldFailIfExists ? 2 : 0);
 
       if (data instanceof Blob) {
         // Async path for Blob - must await arrayBuffer()
         return (async () => {
           const buffer = await data.arrayBuffer();
           const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
-          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, shouldFailIfExists, shouldAppend);
+          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, nativeFlags);
         })();
       }
 
@@ -259,15 +260,15 @@
           // Note: TextEncoder only supports UTF-8, so this is a best-effort approach
           const encoder = new TextEncoder();
           const bytes = encoder.encode(data);
-          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, shouldFailIfExists, shouldAppend);
+          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, nativeFlags);
         }
-        return __APPLE_SPEC__.FileSystem.writeFile(path, data, shouldFailIfExists, shouldAppend);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, data, nativeFlags);
       } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-        return __APPLE_SPEC__.FileSystem.writeFile(path, data, shouldFailIfExists, shouldAppend);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, data, nativeFlags);
       } else {
         // Convert to string
         const strData = String(data);
-        return __APPLE_SPEC__.FileSystem.writeFile(path, strData, shouldFailIfExists, shouldAppend);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, strData, nativeFlags);
       }
     }
 
@@ -466,12 +467,11 @@
       return new WritableStream({
         async start(controller) {
           try {
-            // Create the write file handle with exclusive, append, and truncate modes
-            writeHandle = await __APPLE_SPEC__.FileSystem.createWriteFileHandle(
-              path,
-              shouldAppend,
-              shouldFailIfExists
-            );
+            // Parse flags into bit flags: bit 0 = append, bit 1 = exclusive
+            const nativeFlags = (shouldAppend ? 1 : 0) | (shouldFailIfExists ? 2 : 0);
+
+            // Create the write file handle with flags
+            writeHandle = await __APPLE_SPEC__.FileSystem.createWriteFileHandle(path, nativeFlags);
 
             if (writeHandle < 0) {
               throw new Error(`Failed to open file for writing: ${path}`);

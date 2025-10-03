@@ -33,7 +33,7 @@ import Foundation
     func changeCurrentDirectoryPath(_ path: String) -> Bool
     func removeItem(_ path: String)
     func readFile(_ path: String, _ binary: Bool) -> JSValue?
-    func writeFile(_ path: String, _ data: JSValue, _ exclusive: Bool, _ append: Bool) -> Bool
+    func writeFile(_ path: String, _ data: JSValue, _ flags: Int) -> Bool
     func readDirectory(_ path: String) -> [String]?
     func createDirectory(_ path: String) -> Bool
     func exists(_ path: String) -> Bool
@@ -59,15 +59,19 @@ import Foundation
     /// - createWriteFileHandle returns a Promise<number> resolving to handle id or -1 on failure
     /// - Parameters:
     ///   - path: File path
-    ///   - append: Whether to append (true) or truncate (false)
-    ///   - exclusive: Whether to use O_EXCL flag for atomic exclusive creation
-    func createWriteFileHandle(_ path: String, _ append: Bool, _ exclusive: Bool) -> JSValue
+    ///   - flags: File open flags (bit flags: 1=append, 2=exclusive)
+    func createWriteFileHandle(_ path: String, _ flags: Int) -> JSValue
     /// - writeFileHandleChunk returns a Promise<boolean> resolving with success status
     func writeFileHandleChunk(_ handle: Int, _ data: JSValue) -> JSValue
 }
 
 @objc final class JSFileSystem: NSObject, JSFileSystemExport, @unchecked Sendable {
     
+    // File operation flags (bit flags)
+    // Bit 0 (value 1): Append mode
+    // Bit 1 (value 2): Exclusive mode (O_EXCL - atomic create, fail if exists)
+    // Examples: 0 = truncate, 1 = append, 2 = exclusive, 3 = append+exclusive
+
     private let context: SwiftJS.Context
     private let runloop: RunLoop
 
@@ -130,9 +134,13 @@ import Foundation
         }
     }
 
-    func writeFile(_ path: String, _ data: JSValue, _ exclusive: Bool, _ append: Bool) -> Bool {
+    func writeFile(_ path: String, _ data: JSValue, _ flags: Int) -> Bool {
         let context = JSContext.current()!
         
+        // Decode flags: bit 0 = append, bit 1 = exclusive
+        let append = (flags & 1) != 0
+        let exclusive = (flags & 2) != 0
+
         // Convert JS data to Swift Data
         let swiftData: Data
 
@@ -431,13 +439,17 @@ import Foundation
     }
 
     // Write streaming methods for memory-efficient file writing
-    func createWriteFileHandle(_ path: String, _ append: Bool, _ exclusive: Bool) -> JSValue {
+    func createWriteFileHandle(_ path: String, _ flags: Int) -> JSValue {
         guard let jsContext = JSContext.current() else {
             return JSValue(undefinedIn: JSContext.current() ?? JSContext())
         }
 
         return JSValue(newPromiseIn: jsContext) { resolve, reject in
             DispatchQueue.global().async {
+                // Decode flags: bit 0 = append, bit 1 = exclusive
+                let append = (flags & 1) != 0
+                let exclusive = (flags & 2) != 0
+
                 // Handle exclusive creation atomically using POSIX
                 if exclusive {
                     let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
