@@ -703,18 +703,14 @@ console.log('CWD:', _FileSystem.cwd);
 
 // File operations
 if (_FileSystem.exists('/path/to/file')) {
-    const content = _FileSystem.readText('/path/to/file');
+    const content = _FileSystem.readFile('/path/to/file');
     console.log('File content:', content);
 }
 
 // Binary file operations
 const data = new Uint8Array([1, 2, 3, 4]);
-_FileSystem.writeBytes('/tmp/binary.dat', data);
-const readData = _FileSystem.readBytes('/tmp/binary.dat');
-
-// Async file operations
-const content = await _FileSystem.readFile('/path/to/file', 'utf-8');
-await _FileSystem.writeFile('/path/to/file', 'new content');
+_FileSystem.writeFile('/tmp/binary.dat', data);
+const readData = _FileSystem.readFile('/tmp/binary.dat', { encoding: 'binary' });
 
 // Directory operations
 const files = _FileSystem.readDir('/some/directory');
@@ -724,7 +720,7 @@ _FileSystem.rmdir('/old/directory', { recursive: true });
 // File manipulation
 _FileSystem.copy('/source/file', '/dest/file');
 _FileSystem.move('/old/path', '/new/path');
-_FileSystem.remove('/file/to/delete');
+_FileSystem.removeItem('/file/to/delete');
 
 // File stats
 const stats = _FileSystem.stat('/path/to/file');
@@ -737,8 +733,12 @@ const writeStream = _FileSystem.createWriteStream('/output/file');
 
 readStream.pipeTo(writeStream);
 
-// Glob patterns
-const files = await _FileSystem.glob('**/*.js', { cwd: '/project' });
+// Path utilities - use Path class instead of _FileSystem methods
+const fullPath = Path.join('/home', 'user', 'file.txt');
+const dir = Path.dirname(fullPath);  // '/home/user'
+const base = Path.basename(fullPath);  // 'file.txt'
+const ext = Path.extname(fullPath);  // '.txt'
+```
 ```
 
 ## Native Swift APIs

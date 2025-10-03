@@ -427,6 +427,7 @@ const content = await _FileSystem.readFile(path);
 
 ```javascript
 // ❌ Inefficient - recursive manual traversal
+// ❌ Inefficient - recursive traversal for large directory trees
 function findAllFiles(dir) {
     const files = [];
     const items = _FileSystem.readDir(dir);
@@ -441,8 +442,25 @@ function findAllFiles(dir) {
     return files;
 }
 
-// ✅ Efficient - use glob when available
-const files = await _FileSystem.glob('**/*', { cwd: dir });
+// ✅ Efficient - use manual traversal with batch processing
+function findAllFilesBatch(dir, batchSize = 100) {
+    const files = [];
+    const stack = [dir];
+    while (stack.length > 0) {
+        const current = stack.pop();
+        const items = _FileSystem.readDir(current);
+        for (const item of items) {
+            const fullPath = Path.join(current, item);
+            if (_FileSystem.isFile(fullPath)) {
+                files.push(fullPath);
+            } else if (_FileSystem.isDirectory(fullPath)) {
+                stack.push(fullPath);
+            }
+        }
+    }
+    return files;
+}
+```
 ```
 
 ## Networking Optimization

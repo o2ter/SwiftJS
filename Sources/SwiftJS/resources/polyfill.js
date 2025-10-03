@@ -206,8 +206,9 @@
       return __APPLE_SPEC__.FileSystem.stat(path);
     }
 
-    static async readFile(path, options = {}) {
-      const { encoding = 'utf-8', flag = 'r' } = options;
+    // Read file - synchronous for text/binary
+    static readFile(path, options = {}) {
+      const { encoding = 'utf-8' } = options;
 
       if (!this.exists(path)) {
         throw new Error(`File not found: ${path}`);
@@ -219,23 +220,30 @@
 
       if (encoding === null || encoding === 'binary') {
         // Return Uint8Array for binary data
-        const data = _APPLE_SPEC__.FileSystem.readFileData(path);
-        return data ? data.typedArrayBytes : new Uint8Array(0);
+        const data = __APPLE_SPEC__.FileSystem.readFileData(path);
+        if (!data) return new Uint8Array(0);
+
+        // Use toUint8Array helper to normalize the data
+        return toUint8Array(data);
       } else {
         // Return string for text data
         return __APPLE_SPEC__.FileSystem.readFile(path) || '';
       }
     }
 
-    static async writeFile(path, data, options = {}) {
-      if (typeof data === 'string') {
+    // Write file - async only when dealing with Blob, otherwise synchronous
+    static writeFile(path, data, options = {}) {
+      if (data instanceof Blob) {
+        // Async path for Blob - must await arrayBuffer()
+        return (async () => {
+          const buffer = await data.arrayBuffer();
+          const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
+          return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
+        })();
+      } else if (typeof data === 'string') {
         return __APPLE_SPEC__.FileSystem.writeFile(path, data);
       } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
         return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
-      } else if (data instanceof Blob) {
-        const buffer = await data.arrayBuffer();
-        const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
-        return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
       } else {
         // Convert to string
         return __APPLE_SPEC__.FileSystem.writeFile(path, String(data));
@@ -270,17 +278,15 @@
         }
       }
 
-      __APPLE_SPEC__.FileSystem.removeItem(path);
-      return true;
+      return this.removeItem(path);
     }
 
-    // File/directory manipulation
-    static remove(path) {
+    // File/directory removal - unified method
+    static removeItem(path) {
       if (!this.exists(path)) {
         throw new Error(`Path not found: ${path}`);
       }
-      __APPLE_SPEC__.FileSystem.removeItem(path);
-      return true;
+      return __APPLE_SPEC__.FileSystem.removeItem(path);
     }
 
     static copy(src, dest, options = {}) {
@@ -313,7 +319,7 @@
 
     // Stream operations for large files
     static createReadStream(path, options = {}) {
-      const { encoding = null, start = 0, end = undefined } = options;
+      const { encoding = null, start = 0, end = undefined, chunkSize = 64 * 1024 } = options;
 
       if (!this.exists(path)) {
         throw new Error(`File not found: ${path}`);
@@ -323,45 +329,78 @@
         throw new Error(`Not a file: ${path}`);
       }
 
+      // Use memory-efficient disk streaming via createFileReadableStream
+      // then apply range/encoding transformations if needed
+      const baseStream = createFileReadableStream(path, chunkSize);
+
+      // If no range or encoding, return base stream directly
+      if (start === 0 && end === undefined && encoding === null) {
+        return baseStream;
+      }
+
+      // Apply range filtering and/or encoding transformation
+      let bytesRead = 0;
+      const startByte = Math.max(0, start);
+      const hasEnd = end !== undefined;
+      const decoder = encoding ? new TextDecoder(encoding) : null;
+
       return new ReadableStream({
-        start(controller) {
+        async start(controller) {
+          const reader = baseStream.getReader();
           try {
-            const data = __APPLE_SPEC__.FileSystem.readFileData(path);
-            if (!data) {
-              controller.error(new Error(`Failed to read file: ${path}`));
-              return;
-            }
+            while (true) {
+              const { done, value } = await reader.read();
 
-            const bytes = data.typedArrayBytes;
-            const startByte = Math.max(0, start);
-            const endByte = end !== undefined ? Math.min(bytes.byteLength, end + 1) : bytes.byteLength;
-
-            if (startByte >= endByte) {
-              controller.close();
-              return;
-            }
-
-            // Stream in chunks
-            const chunkSize = 64 * 1024; // 64KB chunks
-            let offset = startByte;
-
-            while (offset < endByte) {
-              const chunkEnd = Math.min(offset + chunkSize, endByte);
-              const chunk = bytes.slice(offset, chunkEnd);
-
-              if (encoding === null) {
-                controller.enqueue(new Uint8Array(chunk));
-              } else {
-                const text = new TextDecoder(encoding).decode(new Uint8Array(chunk));
-                controller.enqueue(text);
+              if (done) {
+                controller.close();
+                break;
               }
 
-              offset = chunkEnd;
-            }
+              const chunk = value;
+              const chunkStart = bytesRead;
+              const chunkEnd = bytesRead + chunk.byteLength;
+              bytesRead = chunkEnd;
 
-            controller.close();
+              // Skip chunks before start byte
+              if (chunkEnd <= startByte) {
+                continue;
+              }
+
+              // Determine slice boundaries within this chunk
+              const sliceStart = Math.max(0, startByte - chunkStart);
+              const sliceEnd = hasEnd ? Math.min(chunk.byteLength, end + 1 - chunkStart) : chunk.byteLength;
+
+              // Stop if we've passed the end byte
+              if (hasEnd && chunkStart >= end + 1) {
+                controller.close();
+                break;
+              }
+
+              if (sliceStart >= sliceEnd) {
+                continue;
+              }
+
+              const sliced = sliceStart > 0 || sliceEnd < chunk.byteLength
+                ? chunk.slice(sliceStart, sliceEnd)
+                : chunk;
+
+              if (decoder) {
+                const text = decoder.decode(sliced, { stream: true });
+                if (text) controller.enqueue(text);
+              } else {
+                controller.enqueue(sliced);
+              }
+
+              // Stop if we've reached the end byte
+              if (hasEnd && bytesRead >= end + 1) {
+                controller.close();
+                break;
+              }
+            }
           } catch (error) {
             controller.error(error);
+          } finally {
+            try { reader.releaseLock(); } catch (e) { }
           }
         }
       });
@@ -400,59 +439,6 @@
           chunks = [];
         }
       });
-    }
-
-    // Utility methods
-    static async glob(pattern, options = {}) {
-      // Simple glob implementation - could be enhanced
-      const { cwd = this.cwd, absolute = false } = options;
-      const results = [];
-
-      const searchDir = (dir, pat) => {
-        try {
-          const entries = this.readDir(dir);
-          for (const entry of entries) {
-            const fullPath = Path.join(dir, entry);
-
-            if (pat.includes('*')) {
-              const regex = new RegExp(pat.replace(/\*/g, '.*'));
-              if (regex.test(entry)) {
-                results.push(absolute ? fullPath : Path.join('.', entry));
-              }
-            } else if (entry === pat) {
-              results.push(absolute ? fullPath : Path.join('.', entry));
-            }
-
-            if (this.isDirectory(fullPath) && pat.includes('/')) {
-              searchDir(fullPath, pat);
-            }
-          }
-        } catch (e) {
-          // Ignore directories we can't read
-        }
-      };
-
-      searchDir(cwd, pattern);
-      return results;
-    }
-
-    // Path utilities
-    static join(...parts) {
-      return parts.join('/').replace(/\/+/g, '/');
-    }
-
-    static dirname(path) {
-      return path.substring(0, path.lastIndexOf('/')) || '/';
-    }
-
-    static basename(path) {
-      return path.substring(path.lastIndexOf('/') + 1);
-    }
-
-    static extname(path) {
-      const name = this.basename(path);
-      const lastDot = name.lastIndexOf('.');
-      return lastDot > 0 ? name.substring(lastDot) : '';
     }
   };
 
