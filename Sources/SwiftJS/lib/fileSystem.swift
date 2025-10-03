@@ -36,6 +36,8 @@ import Foundation
     func readFileData(_ path: String) -> JSValue?
     func writeFile(_ path: String, _ content: String) -> Bool
     func writeFileData(_ path: String, _ data: JSValue) -> Bool
+    func appendFile(_ path: String, _ content: String) -> Bool
+    func appendFileData(_ path: String, _ data: JSValue) -> Bool
     func readDirectory(_ path: String) -> [String]?
     func createDirectory(_ path: String) -> Bool
     func exists(_ path: String) -> Bool
@@ -159,6 +161,88 @@ import Foundation
             }
 
             try swiftData.write(to: URL(fileURLWithPath: path))
+            return true
+        } catch {
+            let context = JSContext.current()!
+            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
+            return false
+        }
+    }
+
+    func appendFile(_ path: String, _ content: String) -> Bool {
+        do {
+            let url = URL(fileURLWithPath: path)
+
+            // Create file if it doesn't exist
+            if !FileManager.default.fileExists(atPath: path) {
+                try content.write(toFile: path, atomically: true, encoding: .utf8)
+                return true
+            }
+
+            // Open file for appending
+            guard let fileHandle = try? FileHandle(forWritingTo: url) else {
+                let context = JSContext.current()!
+                context.exception = JSValue(
+                    newErrorFromMessage: "Failed to open file for appending", in: context)
+                return false
+            }
+
+            defer { fileHandle.closeFile() }
+
+            // Seek to end and append
+            fileHandle.seekToEndOfFile()
+            if let data = content.data(using: .utf8) {
+                fileHandle.write(data)
+            }
+
+            return true
+        } catch {
+            let context = JSContext.current()!
+            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
+            return false
+        }
+    }
+
+    func appendFileData(_ path: String, _ data: JSValue) -> Bool {
+        do {
+            let context = JSContext.current()!
+            let url = URL(fileURLWithPath: path)
+
+            // Handle different types of data
+            let swiftData: Data
+
+            if data.isTypedArray {
+                // Convert typed array to Data
+                let bytes = data.typedArrayBytes
+                swiftData = Data(bytes.bindMemory(to: UInt8.self))
+            } else if data.isString {
+                // Convert string to UTF-8 data
+                swiftData = data.toString().data(using: .utf8) ?? Data()
+            } else {
+                context.exception = JSValue(
+                    newErrorFromMessage: "Unsupported data type for appendFileData", in: context)
+                return false
+            }
+
+            // Create file if it doesn't exist
+            if !FileManager.default.fileExists(atPath: path) {
+                try swiftData.write(to: url)
+                return true
+            }
+
+            // Open file for appending
+            guard let fileHandle = try? FileHandle(forWritingTo: url) else {
+                context.exception = JSValue(
+                    newErrorFromMessage: "Failed to open file for appending", in: context)
+                return false
+            }
+
+            defer { fileHandle.closeFile() }
+
+            // Seek to end and append
+            fileHandle.seekToEndOfFile()
+            fileHandle.write(swiftData)
+
             return true
         } catch {
             let context = JSContext.current()!

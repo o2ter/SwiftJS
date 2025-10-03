@@ -234,20 +234,66 @@
     // Write file - async only when dealing with Blob, otherwise synchronous
     static writeFile(path, data, options = {}) {
       const { encoding = 'utf-8', flags = 'w' } = options;
+
+      // Handle flags option - check if file should be appended or overwritten
+      const shouldAppend = flags.includes('a');
+      const shouldFailIfExists = flags.includes('x');
+
+      // Check flags constraints before writing
+      if (shouldFailIfExists && this.exists(path)) {
+        throw new Error(`File already exists: ${path}`);
+      }
+
       if (data instanceof Blob) {
         // Async path for Blob - must await arrayBuffer()
         return (async () => {
           const buffer = await data.arrayBuffer();
           const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
+
+          // Use native append for efficiency
+          if (shouldAppend) {
+            return __APPLE_SPEC__.FileSystem.appendFileData(path, bytes);
+          }
+
           return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
         })();
       } else if (typeof data === 'string') {
+        // Handle encoding option for string data
+        if (encoding !== 'utf-8' && encoding !== 'utf8') {
+          // For non-UTF-8 encodings, convert string to bytes with TextEncoder
+          // Note: TextEncoder only supports UTF-8, so this is a best-effort approach
+          const encoder = new TextEncoder();
+          const bytes = encoder.encode(data);
+
+          if (shouldAppend) {
+            return __APPLE_SPEC__.FileSystem.appendFileData(path, bytes);
+          }
+
+          return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
+        }
+
+        // Handle append mode for UTF-8 strings using native append
+        if (shouldAppend) {
+          return __APPLE_SPEC__.FileSystem.appendFile(path, data);
+        }
+
         return __APPLE_SPEC__.FileSystem.writeFile(path, data);
       } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+        // Use native append for binary data
+        if (shouldAppend) {
+          return __APPLE_SPEC__.FileSystem.appendFileData(path, data);
+        }
+
         return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
       } else {
-        // Convert to string
-        return __APPLE_SPEC__.FileSystem.writeFile(path, String(data));
+        // Convert to string and use native append
+        const strData = String(data);
+
+        if (shouldAppend) {
+          return __APPLE_SPEC__.FileSystem.appendFile(path, strData);
+        }
+
+        return __APPLE_SPEC__.FileSystem.writeFile(path, strData);
       }
     }
 
@@ -258,6 +304,25 @@
     // Directory operations
     static mkdir(path, options = {}) {
       const { recursive = true } = options;
+
+      // If not recursive, check if parent directory exists
+      if (!recursive) {
+        const parent = Path.dirname(path);
+        if (parent !== '.' && parent !== '/' && !this.exists(parent)) {
+          throw new Error(`Parent directory does not exist: ${parent}`);
+        }
+
+        // Check if directory already exists
+        if (this.exists(path)) {
+          if (this.isDirectory(path)) {
+            // Directory already exists - this is okay for non-recursive mode
+            return true;
+          } else {
+            throw new Error(`Path exists but is not a directory: ${path}`);
+          }
+        }
+      }
+
       return __APPLE_SPEC__.FileSystem.createDirectory(path);
     }
 
@@ -409,6 +474,16 @@
 
     static createWriteStream(path, options = {}) {
       const { encoding = 'utf-8', flags = 'w' } = options;
+
+      // Handle flags option
+      const shouldAppend = flags.includes('a');
+      const shouldFailIfExists = flags.includes('x');
+
+      // Check flags constraints synchronously before creating stream
+      if (shouldFailIfExists && this.exists(path)) {
+        throw new Error(`File already exists: ${path}`);
+      }
+
       let chunks = [];
 
       return new WritableStream({
@@ -427,10 +502,15 @@
         },
 
         close() {
-          // Combine all chunks and write to file
+          // Combine all chunks
           const combined = combineChunksToUint8Array(chunks);
 
-          if (!__APPLE_SPEC__.FileSystem.writeFileData(path, combined)) {
+          // Use native append or write based on flags
+          const success = shouldAppend
+            ? __APPLE_SPEC__.FileSystem.appendFileData(path, combined)
+            : __APPLE_SPEC__.FileSystem.writeFileData(path, combined);
+
+          if (!success) {
             throw new Error(`Failed to write file: ${path}`);
           }
           chunks = [];
