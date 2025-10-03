@@ -58,6 +58,12 @@ import Foundation
     func readFileHandleChunk(_ handle: Int, _ length: Int) -> JSValue
     /// - closeFileHandle returns a Promise<void>
     func closeFileHandle(_ handle: Int) -> JSValue
+    
+    // Write streaming methods for memory-efficient file writing
+    /// - createWriteFileHandle returns a Promise<number> resolving to handle id or -1 on failure
+    func createWriteFileHandle(_ path: String, _ append: Bool) -> JSValue
+    /// - writeFileHandleChunk returns a Promise<boolean> resolving with success status
+    func writeFileHandleChunk(_ handle: Int, _ data: JSValue) -> JSValue
 }
 
 @objc final class JSFileSystem: NSObject, JSFileSystemExport, @unchecked Sendable {
@@ -458,6 +464,109 @@ import Foundation
             }
 
             resolve?.call(withArguments: [JSValue(undefinedIn: jsContext)!])
+        }
+    }
+
+    // Write streaming methods for memory-efficient file writing
+    func createWriteFileHandle(_ path: String, _ append: Bool) -> JSValue {
+        guard let jsContext = JSContext.current() else {
+            return JSValue(undefinedIn: JSContext.current() ?? JSContext())
+        }
+
+        return JSValue(newPromiseIn: jsContext) { resolve, _ in
+            DispatchQueue.global().async {
+                let url = URL(fileURLWithPath: path)
+
+                // Create file if it doesn't exist (for both append and write modes)
+                if !FileManager.default.fileExists(atPath: path) {
+                    FileManager.default.createFile(atPath: path, contents: nil, attributes: nil)
+                }
+
+                // Open file handle
+                if let fileHandle = try? FileHandle(forWritingTo: url) {
+                    // Seek to end if append mode
+                    if append {
+                        fileHandle.seekToEndOfFile()
+                    } else {
+                        // Truncate file if write mode
+                        fileHandle.truncateFile(atOffset: 0)
+                    }
+
+                    // Register the write handle
+                    self.context.handleLock.lock()
+                    self.context.handleCounter += 1
+                    let handleId = self.context.handleCounter
+                    self.context.openFileHandles[handleId] = fileHandle
+                    self.context.handleLock.unlock()
+
+                    self.runloop.perform {
+                        resolve?.call(withArguments: [
+                            JSValue(double: Double(handleId), in: jsContext)!
+                        ])
+                    }
+                } else {
+                    self.runloop.perform {
+                        resolve?.call(withArguments: [JSValue(double: Double(-1), in: jsContext)!])
+                    }
+                }
+            }
+        }
+    }
+
+    func writeFileHandleChunk(_ handle: Int, _ data: JSValue) -> JSValue {
+        guard let jsContext = JSContext.current() else {
+            return JSValue(undefinedIn: JSContext.current() ?? JSContext())
+        }
+
+        return JSValue(newPromiseIn: jsContext) { resolve, reject in
+            self.context.handleLock.lock()
+            let fileHandle = self.context.openFileHandles[handle]
+            self.context.handleLock.unlock()
+
+            guard let fileHandle = fileHandle else {
+                self.runloop.perform {
+                    reject?.call(withArguments: [
+                        JSValue(newErrorFromMessage: "Invalid file handle", in: jsContext)!
+                    ])
+                }
+                return
+            }
+
+            // Convert JS data to Swift Data
+            DispatchQueue.global().async {
+                do {
+                    let swiftData: Data
+
+                    if data.isTypedArray {
+                        let bytes = data.typedArrayBytes
+                        swiftData = Data(bytes.bindMemory(to: UInt8.self))
+                    } else if data.isString {
+                        swiftData = data.toString().data(using: .utf8) ?? Data()
+                    } else {
+                        self.runloop.perform {
+                            reject?.call(withArguments: [
+                                JSValue(
+                                    newErrorFromMessage: "Unsupported data type for write",
+                                    in: jsContext)!
+                            ])
+                        }
+                        return
+                    }
+
+                    // Write chunk to file
+                    try fileHandle.write(contentsOf: swiftData)
+
+                    self.runloop.perform {
+                        resolve?.call(withArguments: [JSValue(bool: true, in: jsContext)!])
+                    }
+                } catch {
+                    self.runloop.perform {
+                        reject?.call(withArguments: [
+                            JSValue(newErrorFromMessage: "\(error)", in: jsContext)!
+                        ])
+                    }
+                }
+            }
         }
     }
 }

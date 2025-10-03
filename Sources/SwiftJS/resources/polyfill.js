@@ -491,40 +491,76 @@
         throw new Error(`File already exists: ${path}`);
       }
 
-      let chunks = [];
+      let writeHandle = null;
+      let isOpen = false;
 
       return new WritableStream({
-        write(chunk) {
-          if (typeof chunk === 'string') {
-            chunks.push(new TextEncoder().encode(chunk));
-          } else if (chunk instanceof Uint8Array) {
-            chunks.push(chunk);
-          } else if (chunk instanceof ArrayBuffer) {
-            chunks.push(new Uint8Array(chunk));
-          } else if (ArrayBuffer.isView(chunk)) {
-            chunks.push(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
-          } else {
-            chunks.push(new TextEncoder().encode(String(chunk)));
+        async start(controller) {
+          try {
+            // Create the write file handle (true for append, false for write/truncate)
+            writeHandle = await __APPLE_SPEC__.FileSystem.createWriteFileHandle(path, shouldAppend);
+            if (writeHandle < 0) {
+              throw new Error(`Failed to open file for writing: ${path}`);
+            }
+            isOpen = true;
+          } catch (error) {
+            controller.error(error);
+            throw error;
           }
         },
 
-        close() {
-          // Combine all chunks
-          const combined = combineChunksToUint8Array(chunks);
-
-          // Use native append or write based on flags
-          const success = shouldAppend
-            ? __APPLE_SPEC__.FileSystem.appendFileData(path, combined)
-            : __APPLE_SPEC__.FileSystem.writeFileData(path, combined);
-
-          if (!success) {
-            throw new Error(`Failed to write file: ${path}`);
+        async write(chunk, controller) {
+          // WritableStream now properly waits for start() to complete
+          if (!isOpen || writeHandle === null) {
+            throw new Error('Stream not open');
           }
-          chunks = [];
+
+          try {
+            // Convert chunk to Uint8Array
+            let data;
+            if (typeof chunk === 'string') {
+              data = new TextEncoder().encode(chunk);
+            } else if (chunk instanceof Uint8Array) {
+              data = chunk;
+            } else if (chunk instanceof ArrayBuffer) {
+              data = new Uint8Array(chunk);
+            } else if (ArrayBuffer.isView(chunk)) {
+              data = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            } else {
+              data = new TextEncoder().encode(String(chunk));
+            }
+
+            // Write chunk immediately to disk (memory-efficient streaming)
+            const success = await __APPLE_SPEC__.FileSystem.writeFileHandleChunk(writeHandle, data);
+            if (!success) {
+              throw new Error('Failed to write chunk to file');
+            }
+          } catch (error) {
+            controller.error(error);
+            throw error;
+          }
         },
 
-        abort() {
-          chunks = [];
+        async close() {
+          if (isOpen && writeHandle !== null) {
+            try {
+              await __APPLE_SPEC__.FileSystem.closeFileHandle(writeHandle);
+            } finally {
+              isOpen = false;
+              writeHandle = null;
+            }
+          }
+        },
+
+        async abort(reason) {
+          if (isOpen && writeHandle !== null) {
+            try {
+              await __APPLE_SPEC__.FileSystem.closeFileHandle(writeHandle);
+            } finally {
+              isOpen = false;
+              writeHandle = null;
+            }
+          }
         }
       });
     }
@@ -4025,16 +4061,19 @@
         queueTotalSize: 0,
         writer: null,
         closePromise: null,
-        abortPromise: null
+        abortPromise: null,
+        startPromise: null  // Track start() completion
       };
 
       const controller = new WritableStreamDefaultController(this, underlyingSink);
       this[SYMBOLS.streamInternal].controller = controller;
 
+      // Store the start promise to ensure it completes before write operations
       if (underlyingSink.start) {
         try {
           const startResult = underlyingSink.start(controller);
           if (startResult && typeof startResult.then === 'function') {
+            this[SYMBOLS.streamInternal].startPromise = startResult;
             startResult.catch(e => controller.error(e));
           }
         } catch (e) {
@@ -4063,14 +4102,21 @@
             return Promise.reject(new TypeError('Cannot write to closed stream'));
           }
 
-          const chunkSize = s.sizeAlgorithm(chunk);
-          const promise = new Promise((resolve, reject) => {
-            s.writeQueue.push({ chunk, chunkSize, resolve, reject });
-            s.queueTotalSize += chunkSize;
-            this.#scheduleWrite();
-          });
+          // Wait for start() to complete before writing (spec-compliant behavior)
+          const writeOperation = async () => {
+            if (s.startPromise) {
+              await s.startPromise;
+            }
 
-          return promise;
+            const chunkSize = s.sizeAlgorithm(chunk);
+            return new Promise((resolve, reject) => {
+              s.writeQueue.push({ chunk, chunkSize, resolve, reject });
+              s.queueTotalSize += chunkSize;
+              this.#scheduleWrite();
+            });
+          };
+
+          return writeOperation();
         }
 
         #scheduleWrite() {
