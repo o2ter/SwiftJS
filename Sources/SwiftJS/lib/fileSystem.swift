@@ -155,77 +155,45 @@ import Foundation
             return false
         }
 
-        // Handle exclusive creation atomically using POSIX
+        // Build POSIX open flags (same pattern as createWriteFileHandle)
+        var openFlags = O_WRONLY | O_CREAT
         if exclusive {
-            let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
-
-            if fd == -1 {
-                let errorNum = errno
-                let error = String(cString: strerror(errorNum))
-                if errorNum == EEXIST {
-                    context.exception = JSValue(
-                        newErrorFromMessage: "File already exists: \(path)", in: context)
-                } else {
-                    context.exception = JSValue(
-                        newErrorFromMessage: "Failed to create file: \(error)", in: context)
-                }
-                return false
-            }
-            
-            defer { close(fd) }
-
-            let written = swiftData.withUnsafeBytes { buffer in
-                write(fd, buffer.baseAddress, buffer.count)
-            }
-            
-            if written != swiftData.count {
-                context.exception = JSValue(
-                    newErrorFromMessage: "Failed to write all data to file", in: context)
-                return false
-            }
-            
-            return true
+            openFlags |= O_EXCL
         }
-
-        // Handle append mode
         if append {
-            do {
-                let url = URL(fileURLWithPath: path)
-
-                // Create file if it doesn't exist
-                if !FileManager.default.fileExists(atPath: path) {
-                    try swiftData.write(to: url)
-                    return true
-                }
-
-                // Open file for appending
-                guard let fileHandle = try? FileHandle(forWritingTo: url) else {
-                    context.exception = JSValue(
-                        newErrorFromMessage: "Failed to open file for appending", in: context)
-                    return false
-                }
-
-                defer { fileHandle.closeFile() }
-
-                // Seek to end and append
-                fileHandle.seekToEndOfFile()
-                fileHandle.write(swiftData)
-
-                return true
-            } catch {
-                context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-                return false
-            }
+            openFlags |= O_APPEND  // Use O_APPEND for atomic append operations
+        } else {
+            openFlags |= O_TRUNC
         }
 
-        // Normal write mode (truncate)
-        do {
-            try swiftData.write(to: URL(fileURLWithPath: path))
-            return true
-        } catch {
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
+        // Open file using POSIX (atomic for exclusive mode)
+        let fd = open(path, openFlags, 0o644)
+
+        if fd == -1 {
+            let errorNum = errno
+            let error = String(cString: strerror(errorNum))
+            let message =
+                errorNum == EEXIST
+                ? "File already exists: \(path)"
+                : "Failed to open file: \(error)"
+            context.exception = JSValue(newErrorFromMessage: message, in: context)
             return false
         }
+
+        defer { close(fd) }
+
+        // Write data (O_APPEND flag ensures atomic append to end of file)
+        let written = swiftData.withUnsafeBytes { buffer in
+            write(fd, buffer.baseAddress, buffer.count)
+        }
+
+        if written != swiftData.count {
+            context.exception = JSValue(
+                newErrorFromMessage: "Failed to write all data to file", in: context)
+            return false
+        }
+
+        return true
     }
 
     func readDirectory(_ path: String) -> [String]? {
@@ -450,83 +418,50 @@ import Foundation
                 let append = (flags & 1) != 0
                 let exclusive = (flags & 2) != 0
 
-                // Handle exclusive creation atomically using POSIX
+                // Build POSIX open flags
+                var openFlags = O_WRONLY | O_CREAT
                 if exclusive {
-                    let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+                    openFlags |= O_EXCL
+                }
+                if append {
+                    openFlags |= O_APPEND  // Use O_APPEND for atomic append operations
+                } else {
+                    openFlags |= O_TRUNC
+                }
 
-                    if fd == -1 {
-                        let errorNum = errno
-                        let error = String(cString: strerror(errorNum))
-                        self.runloop.perform {
-                            if errorNum == EEXIST {
-                                reject?.call(withArguments: [
-                                    JSValue(
-                                        newErrorFromMessage: "File already exists: \(path)",
-                                        in: jsContext)!
-                                ])
-                            } else {
-                                reject?.call(withArguments: [
-                                    JSValue(
-                                        newErrorFromMessage: "Failed to create file: \(error)",
-                                        in: jsContext)!
-                                ])
-                            }
-                        }
-                        return
-                    }
+                // Open file using POSIX (atomic for exclusive mode)
+                let fd = open(path, openFlags, 0o644)
 
-                    // Convert file descriptor to FileHandle
-                    let fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-
-                    // Register the write handle
-                    self.context.handleLock.lock()
-                    self.context.handleCounter += 1
-                    let handleId = self.context.handleCounter
-                    self.context.openFileHandles[handleId] = fileHandle
-                    self.context.handleLock.unlock()
-
+                if fd == -1 {
+                    let errorNum = errno
+                    let error = String(cString: strerror(errorNum))
                     self.runloop.perform {
-                        resolve?.call(withArguments: [
-                            JSValue(double: Double(handleId), in: jsContext)!
+                        let message =
+                            errorNum == EEXIST
+                            ? "File already exists: \(path)"
+                            : "Failed to open file: \(error)"
+                        reject?.call(withArguments: [
+                            JSValue(newErrorFromMessage: message, in: jsContext)!
                         ])
                     }
                     return
                 }
 
-                // Non-exclusive creation
-                let url = URL(fileURLWithPath: path)
+                let fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
 
-                // Create file if it doesn't exist (for both append and write modes)
-                if !FileManager.default.fileExists(atPath: path) {
-                    FileManager.default.createFile(atPath: path, contents: nil, attributes: nil)
-                }
+                // Note: No need to seek - O_APPEND flag ensures atomic append to end of file
 
-                // Open file handle
-                if let fileHandle = try? FileHandle(forWritingTo: url) {
-                    // Seek to end if append mode
-                    if append {
-                        fileHandle.seekToEndOfFile()
-                    } else {
-                        // Truncate file if write mode
-                        fileHandle.truncateFile(atOffset: 0)
-                    }
+                // Register the write handle
+                self.context.handleLock.lock()
+                self.context.handleCounter += 1
+                let handleId = self.context.handleCounter
+                self.context.openFileHandles[handleId] = fileHandle
+                self.context.handleLock.unlock()
 
-                    // Register the write handle
-                    self.context.handleLock.lock()
-                    self.context.handleCounter += 1
-                    let handleId = self.context.handleCounter
-                    self.context.openFileHandles[handleId] = fileHandle
-                    self.context.handleLock.unlock()
-
-                    self.runloop.perform {
-                        resolve?.call(withArguments: [
-                            JSValue(double: Double(handleId), in: jsContext)!
-                        ])
-                    }
-                } else {
-                    self.runloop.perform {
-                        resolve?.call(withArguments: [JSValue(double: Double(-1), in: jsContext)!])
-                    }
+                self.runloop.perform {
+                    resolve?.call(withArguments: [
+                        JSValue(double: Double(handleId), in: jsContext)!
+                    ])
                 }
             }
         }
