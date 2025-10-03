@@ -697,48 +697,48 @@ Direct file system operations (non-web standard):
 
 ```javascript
 // Directory information
-console.log('Home:', FileSystem.home);
-console.log('Temp:', FileSystem.temp);
-console.log('CWD:', FileSystem.cwd);
+console.log('Home:', _FileSystem.home);
+console.log('Temp:', _FileSystem.temp);
+console.log('CWD:', _FileSystem.cwd);
 
 // File operations
-if (FileSystem.exists('/path/to/file')) {
-    const content = FileSystem.readText('/path/to/file');
+if (_FileSystem.exists('/path/to/file')) {
+    const content = _FileSystem.readText('/path/to/file');
     console.log('File content:', content);
 }
 
 // Binary file operations
 const data = new Uint8Array([1, 2, 3, 4]);
-FileSystem.writeBytes('/tmp/binary.dat', data);
-const readData = FileSystem.readBytes('/tmp/binary.dat');
+_FileSystem.writeBytes('/tmp/binary.dat', data);
+const readData = _FileSystem.readBytes('/tmp/binary.dat');
 
 // Async file operations
-const content = await FileSystem.readFile('/path/to/file', 'utf-8');
-await FileSystem.writeFile('/path/to/file', 'new content');
+const content = await _FileSystem.readFile('/path/to/file', 'utf-8');
+await _FileSystem.writeFile('/path/to/file', 'new content');
 
 // Directory operations
-const files = FileSystem.readDir('/some/directory');
-FileSystem.mkdir('/new/directory', { recursive: true });
-FileSystem.rmdir('/old/directory', { recursive: true });
+const files = _FileSystem.readDir('/some/directory');
+_FileSystem.mkdir('/new/directory', { recursive: true });
+_FileSystem.rmdir('/old/directory', { recursive: true });
 
 // File manipulation
-FileSystem.copy('/source/file', '/dest/file');
-FileSystem.move('/old/path', '/new/path');
-FileSystem.remove('/file/to/delete');
+_FileSystem.copy('/source/file', '/dest/file');
+_FileSystem.move('/old/path', '/new/path');
+_FileSystem.remove('/file/to/delete');
 
 // File stats
-const stats = FileSystem.stat('/path/to/file');
+const stats = _FileSystem.stat('/path/to/file');
 console.log('Size:', stats.size);
 console.log('Modified:', stats.lastModified);
 
 // Streaming for large files
-const readStream = FileSystem.createReadStream('/large/file');
-const writeStream = FileSystem.createWriteStream('/output/file');
+const readStream = _FileSystem.createReadStream('/large/file');
+const writeStream = _FileSystem.createWriteStream('/output/file');
 
 readStream.pipeTo(writeStream);
 
 // Glob patterns
-const files = await FileSystem.glob('**/*.js', { cwd: '/project' });
+const files = await _FileSystem.glob('**/*.js', { cwd: '/project' });
 ```
 
 ## Native Swift APIs

@@ -178,8 +178,8 @@
     }
   };
 
-  // FileSystem - Direct file system operations (non-web standard)
-  globalThis.FileSystem = class FileSystem {
+  // _FileSystem - Direct file system operations (non-web standard)
+  globalThis._FileSystem = class FileSystem {
     // Directory utilities
     static get home() { return __APPLE_SPEC__.FileSystem.homeDirectory(); }
     static get temp() { return __APPLE_SPEC__.FileSystem.temporaryDirectory(); }
@@ -206,15 +206,6 @@
       return __APPLE_SPEC__.FileSystem.stat(path);
     }
 
-    // Reading operations
-    static readText(path, encoding = 'utf-8') {
-      return __APPLE_SPEC__.FileSystem.readFile(path);
-    }
-
-    static readBytes(path) {
-      return __APPLE_SPEC__.FileSystem.readFileData(path);
-    }
-
     static async readFile(path, options = {}) {
       const { encoding = 'utf-8', flag = 'r' } = options;
 
@@ -228,43 +219,31 @@
 
       if (encoding === null || encoding === 'binary') {
         // Return Uint8Array for binary data
-        const data = this.readBytes(path);
+        const data = _APPLE_SPEC__.FileSystem.readFileData(path);
         return data ? data.typedArrayBytes : new Uint8Array(0);
       } else {
         // Return string for text data
-        return this.readText(path) || '';
+        return __APPLE_SPEC__.FileSystem.readFile(path) || '';
+      }
+    }
+
+    static async writeFile(path, data, options = {}) {
+      if (typeof data === 'string') {
+        return __APPLE_SPEC__.FileSystem.writeFile(path, data);
+      } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+        return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
+      } else if (data instanceof Blob) {
+        const buffer = await data.arrayBuffer();
+        const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
+        return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
+      } else {
+        // Convert to string
+        return __APPLE_SPEC__.FileSystem.writeFile(path, String(data));
       }
     }
 
     static readDir(path) {
       return __APPLE_SPEC__.FileSystem.readDirectory(path) || [];
-    }
-
-    // Writing operations
-    static writeText(path, content, options = {}) {
-      const { flag = 'w' } = options;
-      return __APPLE_SPEC__.FileSystem.writeFile(path, String(content));
-    }
-
-    static writeBytes(path, data) {
-      return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
-    }
-
-    static async writeFile(path, data, options = {}) {
-      const { encoding = 'utf-8', flag = 'w' } = options;
-
-      if (typeof data === 'string') {
-        return this.writeText(path, data, options);
-      } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-        return this.writeBytes(path, data);
-      } else if (data instanceof Blob) {
-        const buffer = await data.arrayBuffer();
-        const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
-        return this.writeBytes(path, bytes);
-      } else {
-        // Convert to string
-        return this.writeText(path, String(data), options);
-      }
     }
 
     // Directory operations
@@ -475,32 +454,7 @@
       const lastDot = name.lastIndexOf('.');
       return lastDot > 0 ? name.substring(lastDot) : '';
     }
-
-    // Efficient file operations that go through Swift
-    static async streamCopy(source, destination, options = {}) {
-      const { onProgress } = options;
-
-      if (!this.exists(source)) {
-        throw new Error(`Source file not found: ${source}`);
-      }
-
-      // For files under 10MB, use direct copy for better performance
-      const sourceSize = this.stat(source).size;
-      if (sourceSize <= 10 * 1024 * 1024) {
-        const result = this.copy(source, destination, { overwrite: true });
-        if (onProgress) {
-          onProgress({ loaded: sourceSize, total: sourceSize, percent: 100 });
-        }
-        return result;
-      }
-
-      // For larger files, could implement chunked copying in Swift
-      // For now, fall back to standard copy
-      return this.copy(source, destination, { overwrite: true });
-    }
   };
-
-
 
   // Event API - basic DOM-like event system
   globalThis.Event = class Event {

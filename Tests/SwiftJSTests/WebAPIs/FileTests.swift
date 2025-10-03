@@ -35,9 +35,9 @@ final class FileTests: XCTestCase {
     // Helper method to create a unique temporary directory for tests
     private func createTempDir(context: SwiftJS) -> String {
         let script = """
-            const tempBase = FileSystem.temp;
+            const tempBase = _FileSystem.temp;
             const testDir = Path.join(tempBase, 'SwiftJS-FileTests-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9));
-            FileSystem.mkdir(testDir);
+            _FileSystem.mkdir(testDir);
             testDir
         """
         return context.evaluateScript(script).toString()
@@ -46,8 +46,8 @@ final class FileTests: XCTestCase {
     // Helper method to clean up temporary directory
     private func cleanupTempDir(_ tempDir: String, context: SwiftJS) {
         let script = """
-            if (FileSystem.exists('\(tempDir)')) {
-                FileSystem.rmdir('\(tempDir)', { recursive: true });
+            if (_FileSystem.exists('\(tempDir)')) {
+                _FileSystem.rmdir('\(tempDir)', { recursive: true });
             }
         """
         context.evaluateScript(script)
@@ -241,7 +241,7 @@ final class FileTests: XCTestCase {
             // Create a test file first
             const testFile = Path.join('\(tempDir)', 'test-file.txt');
             const testContent = 'Hello from file system!';
-            FileSystem.writeFile(testFile, testContent);
+            _FileSystem.writeFile(testFile, testContent);
             
             // Now test File.fromPath
             try {
@@ -252,7 +252,7 @@ final class FileTests: XCTestCase {
                     type: file.type,
                     size: file.size,
                     isFile: file instanceof File,
-                    exists: FileSystem.exists(testFile)
+                    exists: _FileSystem.exists(testFile)
                 })
             } catch (error) {
                 ({
@@ -291,7 +291,7 @@ final class FileTests: XCTestCase {
             
             for (const testFile of testFiles) {
                 const filePath = Path.join('\(tempDir)', testFile.name);
-                FileSystem.writeFile(filePath, 'test content');
+                _FileSystem.writeFile(filePath, 'test content');
                 
                 try {
                     const file = File.fromPath(filePath);
@@ -334,7 +334,7 @@ final class FileTests: XCTestCase {
             // Create a larger test file
             const testFile = Path.join('\(tempDir)', 'large-test.txt');
             const testContent = 'Hello from file system! '.repeat(1000);
-            FileSystem.writeFile(testFile, testContent);
+            _FileSystem.writeFile(testFile, testContent);
             
             const file = File.fromPath(testFile);
             const stream = file.stream();
@@ -574,7 +574,7 @@ final class FileTests: XCTestCase {
             // Create a test file
             const testFile = Path.join('\(tempDir)', 'reader-test.txt');
             const testContent = 'Hello from file system for FileReader!';
-            FileSystem.writeFile(testFile, testContent);
+            _FileSystem.writeFile(testFile, testContent);
             
             // Use File.fromPath and FileReader together
             const file = File.fromPath(testFile);
@@ -711,7 +711,7 @@ final class FileTests: XCTestCase {
             // Create a file from file system
             const testFile = Path.join('\(tempDir)', 'integration-test.txt');
             const originalContent = 'Hello, Integration Test! 🚀';
-            FileSystem.writeFile(testFile, originalContent);
+            _FileSystem.writeFile(testFile, originalContent);
             
             const fsFile = File.fromPath(testFile);
             
@@ -816,7 +816,7 @@ final class FileTests: XCTestCase {
             const chunk = 'This is a chunk of text that will be repeated many times. ';
             const largeContent = chunk.repeat(10000); // About 500KB
             
-            FileSystem.writeFile(largeFile, largeContent);
+            _FileSystem.writeFile(largeFile, largeContent);
             
             const start = Date.now();
             const file = File.fromPath(largeFile);

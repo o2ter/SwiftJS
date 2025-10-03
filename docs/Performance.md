@@ -375,10 +375,10 @@ RunLoop.main.run()
 
 ```javascript
 // ❌ Inefficient for large files - loads entire file into memory
-const content = FileSystem.readText('/large/file.txt');
+const content = _FileSystem.readText('/large/file.txt');
 
 // ✅ Efficient for large files - streaming
-const stream = FileSystem.createReadStream('/large/file.txt');
+const stream = _FileSystem.createReadStream('/large/file.txt');
 const reader = stream.getReader();
 
 while (true) {
@@ -394,16 +394,16 @@ while (true) {
 // ❌ Inefficient - multiple filesystem calls
 const files = ['a.txt', 'b.txt', 'c.txt'];
 for (const file of files) {
-    if (FileSystem.exists(file)) {
-        const content = FileSystem.readText(file);
+    if (_FileSystem.exists(file)) {
+        const content = _FileSystem.readText(file);
         console.log(content);
     }
 }
 
 // ✅ Efficient - check existence first, batch reads
-const existingFiles = files.filter(file => FileSystem.exists(file));
+const existingFiles = files.filter(file => _FileSystem.exists(file));
 const contents = await Promise.all(
-    existingFiles.map(file => FileSystem.readFile(file))
+    existingFiles.map(file => _FileSystem.readFile(file))
 );
 ```
 
@@ -411,16 +411,16 @@ const contents = await Promise.all(
 
 ```javascript
 // For small text files
-const text = FileSystem.readText(path);
+const text = _FileSystem.readText(path);
 
 // For small binary files
-const bytes = FileSystem.readBytes(path);
+const bytes = _FileSystem.readBytes(path);
 
 // For large files (streaming)
-const stream = FileSystem.createReadStream(path);
+const stream = _FileSystem.createReadStream(path);
 
 // For async operations
-const content = await FileSystem.readFile(path);
+const content = await _FileSystem.readFile(path);
 ```
 
 ### Directory Operations
@@ -429,12 +429,12 @@ const content = await FileSystem.readFile(path);
 // ❌ Inefficient - recursive manual traversal
 function findAllFiles(dir) {
     const files = [];
-    const items = FileSystem.readDir(dir);
+    const items = _FileSystem.readDir(dir);
     for (const item of items) {
         const fullPath = Path.join(dir, item);
-        if (FileSystem.isFile(fullPath)) {
+        if (_FileSystem.isFile(fullPath)) {
             files.push(fullPath);
-        } else if (FileSystem.isDirectory(fullPath)) {
+        } else if (_FileSystem.isDirectory(fullPath)) {
             files.push(...findAllFiles(fullPath));
         }
     }
@@ -442,7 +442,7 @@ function findAllFiles(dir) {
 }
 
 // ✅ Efficient - use glob when available
-const files = await FileSystem.glob('**/*', { cwd: dir });
+const files = await _FileSystem.glob('**/*', { cwd: dir });
 ```
 
 ## Networking Optimization
