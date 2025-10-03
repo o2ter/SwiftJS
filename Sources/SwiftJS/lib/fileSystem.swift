@@ -32,12 +32,8 @@ import Foundation
     func currentDirectoryPath() -> String
     func changeCurrentDirectoryPath(_ path: String) -> Bool
     func removeItem(_ path: String)
-    func readFile(_ path: String) -> String?
-    func readFileData(_ path: String) -> JSValue?
-    func writeFile(_ path: String, _ content: String) -> Bool
-    func writeFileData(_ path: String, _ data: JSValue) -> Bool
-    func appendFile(_ path: String, _ content: String) -> Bool
-    func appendFileData(_ path: String, _ data: JSValue) -> Bool
+    func readFile(_ path: String, _ binary: Bool) -> JSValue?
+    func writeFile(_ path: String, _ data: JSValue, _ exclusive: Bool, _ append: Bool) -> Bool
     func readDirectory(_ path: String) -> [String]?
     func createDirectory(_ path: String) -> Bool
     func exists(_ path: String) -> Bool
@@ -61,7 +57,11 @@ import Foundation
     
     // Write streaming methods for memory-efficient file writing
     /// - createWriteFileHandle returns a Promise<number> resolving to handle id or -1 on failure
-    func createWriteFileHandle(_ path: String, _ append: Bool) -> JSValue
+    /// - Parameters:
+    ///   - path: File path
+    ///   - append: Whether to append (true) or truncate (false)
+    ///   - exclusive: Whether to use O_EXCL flag for atomic exclusive creation
+    func createWriteFileHandle(_ path: String, _ append: Bool, _ exclusive: Bool) -> JSValue
     /// - writeFileHandleChunk returns a Promise<boolean> resolving with success status
     func writeFileHandleChunk(_ handle: Int, _ data: JSValue) -> JSValue
 }
@@ -108,150 +108,113 @@ import Foundation
         }
     }
     
-    func readFile(_ path: String) -> String? {
+    func readFile(_ path: String, _ binary: Bool) -> JSValue? {
+        let context = JSContext.current()!
+        
         do {
-            return try String(contentsOfFile: path, encoding: .utf8)
-        } catch {
-            let context = JSContext.current()!
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-            return nil
-        }
-    }
-
-    func readFileData(_ path: String) -> JSValue? {
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .alwaysMapped)
-            let context = JSContext.current()!
-
-            // Create a Uint8Array in JavaScript
-            let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
-                data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+            if binary {
+                // Return Uint8Array for binary data
+                let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .alwaysMapped)
+                let uint8Array = JSValue.uint8Array(count: data.count, in: context) { buffer in
+                    data.copyBytes(to: buffer.bindMemory(to: UInt8.self), count: data.count)
+                }
+                return uint8Array
+            } else {
+                // Return string for text data
+                let content = try String(contentsOfFile: path, encoding: .utf8)
+                return JSValue(object: content, in: context)
             }
-            return uint8Array
         } catch {
-            let context = JSContext.current()!
             context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
             return nil
         }
     }
 
-    func writeFile(_ path: String, _ content: String) -> Bool {
-        do {
-            try content.write(toFile: path, atomically: true, encoding: .utf8)
-            return true
-        } catch {
-            let context = JSContext.current()!
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
+    func writeFile(_ path: String, _ data: JSValue, _ exclusive: Bool, _ append: Bool) -> Bool {
+        let context = JSContext.current()!
+        
+        // Convert JS data to Swift Data
+        let swiftData: Data
+
+        if data.isTypedArray {
+            let bytes = data.typedArrayBytes
+            swiftData = Data(bytes.bindMemory(to: UInt8.self))
+        } else if data.isString {
+            swiftData = data.toString().data(using: .utf8) ?? Data()
+        } else {
+            context.exception = JSValue(
+                newErrorFromMessage: "Unsupported data type for writeFile", in: context)
             return false
         }
-    }
 
-    func writeFileData(_ path: String, _ data: JSValue) -> Bool {
-        do {
-            let context = JSContext.current()!
+        // Handle exclusive creation atomically using POSIX
+        if exclusive {
+            let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
 
-            // Handle different types of data
-            let swiftData: Data
-
-            if data.isTypedArray {
-                // Convert typed array to Data
-                let bytes = data.typedArrayBytes
-                swiftData = Data(bytes.bindMemory(to: UInt8.self))
-            } else if data.isString {
-                // Convert string to UTF-8 data
-                swiftData = data.toString().data(using: .utf8) ?? Data()
-            } else {
-                context.exception = JSValue(
-                    newErrorFromMessage: "Unsupported data type for writeFileData", in: context)
+            if fd == -1 {
+                let errorNum = errno
+                let error = String(cString: strerror(errorNum))
+                if errorNum == EEXIST {
+                    context.exception = JSValue(
+                        newErrorFromMessage: "File already exists: \(path)", in: context)
+                } else {
+                    context.exception = JSValue(
+                        newErrorFromMessage: "Failed to create file: \(error)", in: context)
+                }
                 return false
             }
+            
+            defer { close(fd) }
 
+            let written = swiftData.withUnsafeBytes { buffer in
+                write(fd, buffer.baseAddress, buffer.count)
+            }
+            
+            if written != swiftData.count {
+                context.exception = JSValue(
+                    newErrorFromMessage: "Failed to write all data to file", in: context)
+                return false
+            }
+            
+            return true
+        }
+
+        // Handle append mode
+        if append {
+            do {
+                let url = URL(fileURLWithPath: path)
+
+                // Create file if it doesn't exist
+                if !FileManager.default.fileExists(atPath: path) {
+                    try swiftData.write(to: url)
+                    return true
+                }
+
+                // Open file for appending
+                guard let fileHandle = try? FileHandle(forWritingTo: url) else {
+                    context.exception = JSValue(
+                        newErrorFromMessage: "Failed to open file for appending", in: context)
+                    return false
+                }
+
+                defer { fileHandle.closeFile() }
+
+                // Seek to end and append
+                fileHandle.seekToEndOfFile()
+                fileHandle.write(swiftData)
+
+                return true
+            } catch {
+                context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
+                return false
+            }
+        }
+
+        // Normal write mode (truncate)
+        do {
             try swiftData.write(to: URL(fileURLWithPath: path))
             return true
         } catch {
-            let context = JSContext.current()!
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-            return false
-        }
-    }
-
-    func appendFile(_ path: String, _ content: String) -> Bool {
-        do {
-            let url = URL(fileURLWithPath: path)
-
-            // Create file if it doesn't exist
-            if !FileManager.default.fileExists(atPath: path) {
-                try content.write(toFile: path, atomically: true, encoding: .utf8)
-                return true
-            }
-
-            // Open file for appending
-            guard let fileHandle = try? FileHandle(forWritingTo: url) else {
-                let context = JSContext.current()!
-                context.exception = JSValue(
-                    newErrorFromMessage: "Failed to open file for appending", in: context)
-                return false
-            }
-
-            defer { fileHandle.closeFile() }
-
-            // Seek to end and append
-            fileHandle.seekToEndOfFile()
-            if let data = content.data(using: .utf8) {
-                fileHandle.write(data)
-            }
-
-            return true
-        } catch {
-            let context = JSContext.current()!
-            context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
-            return false
-        }
-    }
-
-    func appendFileData(_ path: String, _ data: JSValue) -> Bool {
-        do {
-            let context = JSContext.current()!
-            let url = URL(fileURLWithPath: path)
-
-            // Handle different types of data
-            let swiftData: Data
-
-            if data.isTypedArray {
-                // Convert typed array to Data
-                let bytes = data.typedArrayBytes
-                swiftData = Data(bytes.bindMemory(to: UInt8.self))
-            } else if data.isString {
-                // Convert string to UTF-8 data
-                swiftData = data.toString().data(using: .utf8) ?? Data()
-            } else {
-                context.exception = JSValue(
-                    newErrorFromMessage: "Unsupported data type for appendFileData", in: context)
-                return false
-            }
-
-            // Create file if it doesn't exist
-            if !FileManager.default.fileExists(atPath: path) {
-                try swiftData.write(to: url)
-                return true
-            }
-
-            // Open file for appending
-            guard let fileHandle = try? FileHandle(forWritingTo: url) else {
-                context.exception = JSValue(
-                    newErrorFromMessage: "Failed to open file for appending", in: context)
-                return false
-            }
-
-            defer { fileHandle.closeFile() }
-
-            // Seek to end and append
-            fileHandle.seekToEndOfFile()
-            fileHandle.write(swiftData)
-
-            return true
-        } catch {
-            let context = JSContext.current()!
             context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
             return false
         }
@@ -468,13 +431,57 @@ import Foundation
     }
 
     // Write streaming methods for memory-efficient file writing
-    func createWriteFileHandle(_ path: String, _ append: Bool) -> JSValue {
+    func createWriteFileHandle(_ path: String, _ append: Bool, _ exclusive: Bool) -> JSValue {
         guard let jsContext = JSContext.current() else {
             return JSValue(undefinedIn: JSContext.current() ?? JSContext())
         }
 
-        return JSValue(newPromiseIn: jsContext) { resolve, _ in
+        return JSValue(newPromiseIn: jsContext) { resolve, reject in
             DispatchQueue.global().async {
+                // Handle exclusive creation atomically using POSIX
+                if exclusive {
+                    let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+
+                    if fd == -1 {
+                        let errorNum = errno
+                        let error = String(cString: strerror(errorNum))
+                        self.runloop.perform {
+                            if errorNum == EEXIST {
+                                reject?.call(withArguments: [
+                                    JSValue(
+                                        newErrorFromMessage: "File already exists: \(path)",
+                                        in: jsContext)!
+                                ])
+                            } else {
+                                reject?.call(withArguments: [
+                                    JSValue(
+                                        newErrorFromMessage: "Failed to create file: \(error)",
+                                        in: jsContext)!
+                                ])
+                            }
+                        }
+                        return
+                    }
+
+                    // Convert file descriptor to FileHandle
+                    let fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+
+                    // Register the write handle
+                    self.context.handleLock.lock()
+                    self.context.handleCounter += 1
+                    let handleId = self.context.handleCounter
+                    self.context.openFileHandles[handleId] = fileHandle
+                    self.context.handleLock.unlock()
+
+                    self.runloop.perform {
+                        resolve?.call(withArguments: [
+                            JSValue(double: Double(handleId), in: jsContext)!
+                        ])
+                    }
+                    return
+                }
+
+                // Non-exclusive creation
                 let url = URL(fileURLWithPath: path)
 
                 // Create file if it doesn't exist (for both append and write modes)

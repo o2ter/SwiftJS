@@ -218,17 +218,20 @@
         throw new Error(`Not a file: ${path}`);
       }
 
-      if (encoding === null || encoding === 'binary') {
-        // Return Uint8Array for binary data
-        const data = __APPLE_SPEC__.FileSystem.readFileData(path);
-        if (!data) return new Uint8Array(0);
+      const isBinary = encoding === null || encoding === 'binary';
+      const data = __APPLE_SPEC__.FileSystem.readFile(path, isBinary);
 
-        // Use toUint8Array helper to normalize the data
-        return toUint8Array(data);
-      } else {
-        // Return string for text data
-        return __APPLE_SPEC__.FileSystem.readFile(path) || '';
+      if (!data) {
+        return isBinary ? new Uint8Array(0) : '';
       }
+
+      // For binary data, normalize to Uint8Array
+      if (isBinary) {
+        return toUint8Array(data);
+      }
+
+      // For text data, return string
+      return data;
     }
 
     // Write file - async only when dealing with Blob, otherwise synchronous
@@ -239,61 +242,32 @@
       const shouldAppend = flags.includes('a');
       const shouldFailIfExists = flags.includes('x');
 
-      // Check flags constraints before writing
-      if (shouldFailIfExists && this.exists(path)) {
-        throw new Error(`File already exists: ${path}`);
-      }
-
       if (data instanceof Blob) {
         // Async path for Blob - must await arrayBuffer()
         return (async () => {
           const buffer = await data.arrayBuffer();
           const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
-
-          // Use native append for efficiency
-          if (shouldAppend) {
-            return __APPLE_SPEC__.FileSystem.appendFileData(path, bytes);
-          }
-
-          return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
+          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, shouldFailIfExists, shouldAppend);
         })();
-      } else if (typeof data === 'string') {
+      }
+
+      // Synchronous path for non-Blob data
+      if (typeof data === 'string') {
         // Handle encoding option for string data
         if (encoding !== 'utf-8' && encoding !== 'utf8') {
           // For non-UTF-8 encodings, convert string to bytes with TextEncoder
           // Note: TextEncoder only supports UTF-8, so this is a best-effort approach
           const encoder = new TextEncoder();
           const bytes = encoder.encode(data);
-
-          if (shouldAppend) {
-            return __APPLE_SPEC__.FileSystem.appendFileData(path, bytes);
-          }
-
-          return __APPLE_SPEC__.FileSystem.writeFileData(path, bytes);
+          return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, shouldFailIfExists, shouldAppend);
         }
-
-        // Handle append mode for UTF-8 strings using native append
-        if (shouldAppend) {
-          return __APPLE_SPEC__.FileSystem.appendFile(path, data);
-        }
-
-        return __APPLE_SPEC__.FileSystem.writeFile(path, data);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, data, shouldFailIfExists, shouldAppend);
       } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-        // Use native append for binary data
-        if (shouldAppend) {
-          return __APPLE_SPEC__.FileSystem.appendFileData(path, data);
-        }
-
-        return __APPLE_SPEC__.FileSystem.writeFileData(path, data);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, data, shouldFailIfExists, shouldAppend);
       } else {
-        // Convert to string and use native append
+        // Convert to string
         const strData = String(data);
-
-        if (shouldAppend) {
-          return __APPLE_SPEC__.FileSystem.appendFile(path, strData);
-        }
-
-        return __APPLE_SPEC__.FileSystem.writeFile(path, strData);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, strData, shouldFailIfExists, shouldAppend);
       }
     }
 
@@ -486,19 +460,19 @@
         console.warn(`createWriteStream: encoding '${encoding}' not supported, using 'utf-8'`);
       }
 
-      // Check flags constraints synchronously before creating stream
-      if (shouldFailIfExists && this.exists(path)) {
-        throw new Error(`File already exists: ${path}`);
-      }
-
       let writeHandle = null;
       let isOpen = false;
 
       return new WritableStream({
         async start(controller) {
           try {
-            // Create the write file handle (true for append, false for write/truncate)
-            writeHandle = await __APPLE_SPEC__.FileSystem.createWriteFileHandle(path, shouldAppend);
+            // Create the write file handle with exclusive, append, and truncate modes
+            writeHandle = await __APPLE_SPEC__.FileSystem.createWriteFileHandle(
+              path,
+              shouldAppend,
+              shouldFailIfExists
+            );
+
             if (writeHandle < 0) {
               throw new Error(`Failed to open file for writing: ${path}`);
             }
