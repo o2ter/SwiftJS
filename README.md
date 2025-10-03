@@ -92,8 +92,8 @@ js.evaluateScript("""
 
 // File System
 js.evaluateScript("""
-    FileSystem.writeText('/tmp/test.txt', 'Hello from JavaScript');
-    const content = FileSystem.readText('/tmp/test.txt');
+    _FileSystem.writeFile('/tmp/test.txt', 'Hello from JavaScript');
+    const content = _FileSystem.readFile('/tmp/test.txt');
     console.log('File content:', content);
 """)
 
@@ -163,7 +163,7 @@ const id = crypto.randomUUID();
 console.log('Random ID:', id);
 
 // File operations
-FileSystem.writeText('/tmp/swiftjs-test.txt', `Generated at ${new Date()}`);
+_FileSystem.writeFile('/tmp/swiftjs-test.txt', `Generated at ${new Date()}`);
 console.log('File written successfully');
 
 // Async operation
@@ -199,7 +199,7 @@ SwiftJS provides comprehensive JavaScript APIs:
 
 ### Node.js-like APIs
 - **Process**: `process.pid`, `process.argv`, `process.env`, `process.exit()`
-- **File System**: `FileSystem.readText()`, `FileSystem.writeText()`, etc.
+- **File System**: `_FileSystem.readFile()`, `_FileSystem.writeFile()`, etc.
 - **Path**: `Path.join()`, `Path.dirname()`, path manipulation utilities
 - **Streams**: Full Web Streams API (ReadableStream, WritableStream, TransformStream with backpressure, BYOB readers, and queuing strategies)
 

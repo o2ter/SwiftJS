@@ -73,7 +73,7 @@ SwiftJSRunner provides a complete JavaScript environment with:
 ### Node.js-like APIs
 
 - **Process**: Access to process information and control
-- **File System**: Complete file operations through `FileSystem` class
+- **File System**: Complete file operations through `_FileSystem` class
 - **Path**: Path manipulation utilities through `Path` class
 
 ### Web Standards APIs
@@ -131,18 +131,18 @@ const fileName = '/tmp/swiftjs-demo.txt';
 const content = `Generated at ${new Date().toISOString()}`;
 
 // Write file
-FileSystem.writeText(fileName, content);
+_FileSystem.writeFile(fileName, content);
 console.log('File written:', fileName);
 
 // Read file back
-const readContent = FileSystem.readText(fileName);
+const readContent = _FileSystem.readFile(fileName);
 console.log('File content:', readContent);
 
 // Check file exists
-console.log('File exists:', FileSystem.exists(fileName));
+console.log('File exists:', _FileSystem.exists(fileName));
 
 // Get file stats
-const stats = FileSystem.stat(fileName);
+const stats = _FileSystem.stat(fileName);
 console.log('File size:', stats.size, 'bytes');
 ```
 
@@ -412,7 +412,7 @@ SwiftJSRunner is not a drop-in replacement for Node.js. Key differences:
 - No global `Buffer` class
 
 ### Different APIs
-- File system operations use `FileSystem` class instead of `fs` module
+- File system operations use `_FileSystem` class instead of `fs` module
 - Path operations use `Path` class instead of `path` module
 - No streams compatibility with Node.js streams
 

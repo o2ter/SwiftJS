@@ -375,7 +375,7 @@ RunLoop.main.run()
 
 ```javascript
 // ❌ Inefficient for large files - loads entire file into memory
-const content = _FileSystem.readText('/large/file.txt');
+const content = _FileSystem.readFile('/large/file.txt');
 
 // ✅ Efficient for large files - streaming
 const stream = _FileSystem.createReadStream('/large/file.txt');
@@ -411,16 +411,16 @@ const contents = await Promise.all(
 
 ```javascript
 // For small text files
-const text = _FileSystem.readText(path);
+const text = _FileSystem.readFile(path);
 
-// For small binary files
-const bytes = _FileSystem.readBytes(path);
+// For small binary files (returns Uint8Array)
+const bytes = _FileSystem.readFile(path, { encoding: 'binary' });
 
 // For large files (streaming)
 const stream = _FileSystem.createReadStream(path);
 
-// For async operations
-const content = await _FileSystem.readFile(path);
+// Synchronous for simple operations
+const content = _FileSystem.readFile(path);
 ```
 
 ### Directory Operations
