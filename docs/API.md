@@ -720,7 +720,7 @@ _FileSystem.rmdir('/old/directory', { recursive: true });
 // File manipulation
 _FileSystem.copy('/source/file', '/dest/file');
 _FileSystem.move('/old/path', '/new/path');
-_FileSystem.removeItem('/file/to/delete');
+_FileSystem.remove('/file/to/delete');
 
 // File stats
 const stats = _FileSystem.stat('/path/to/file');

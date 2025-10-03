@@ -278,11 +278,11 @@
         }
       }
 
-      return this.removeItem(path);
+      return this.remove(path);
     }
 
     // File/directory removal - unified method
-    static removeItem(path) {
+    static remove(path) {
       if (!this.exists(path)) {
         throw new Error(`Path not found: ${path}`);
       }
