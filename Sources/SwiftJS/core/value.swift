@@ -43,7 +43,7 @@ extension SwiftJS {
         
         let base: ValueBase
         
-        init(_ value: JSValue) {
+        public init(_ value: JSValue) {
             self.base = .value(value)
         }
         
