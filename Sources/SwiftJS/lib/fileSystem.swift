@@ -31,7 +31,7 @@ import Foundation
     func temporaryDirectory() -> String
     func currentDirectoryPath() -> String
     func changeCurrentDirectoryPath(_ path: String) -> Bool
-    func removeItem(_ path: String)
+    func removeItem(_ path: String) -> Bool
     func readFile(_ path: String, _ binary: Bool) -> JSValue?
     func writeFile(_ path: String, _ data: JSValue, _ flags: Int) -> Bool
     func readDirectory(_ path: String) -> [String]?
@@ -99,9 +99,10 @@ import Foundation
         return FileManager.default.changeCurrentDirectoryPath(path)
     }
     
-    func removeItem(_ path: String) {
+    func removeItem(_ path: String) -> Bool {
         do {
             try FileManager.default.removeItem(atPath: path)
+            return true
         } catch {
             let context = JSContext.current()!
             if let error = error as? JSValue {
@@ -109,6 +110,7 @@ import Foundation
             } else {
                 context.exception = JSValue(newErrorFromMessage: "\(error)", in: context)
             }
+            return false
         }
     }
     
