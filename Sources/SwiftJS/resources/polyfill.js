@@ -263,7 +263,11 @@
           return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, nativeFlags);
         }
         return __APPLE_SPEC__.FileSystem.writeFile(path, data, nativeFlags);
-      } else if (data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+      } else if (data instanceof ArrayBuffer) {
+        // Convert ArrayBuffer to Uint8Array
+        const bytes = new Uint8Array(data, 0, data.byteLength);
+        return __APPLE_SPEC__.FileSystem.writeFile(path, bytes, nativeFlags);
+      } else if (data instanceof Uint8Array || ArrayBuffer.isView(data)) {
         return __APPLE_SPEC__.FileSystem.writeFile(path, data, nativeFlags);
       } else {
         // Convert to string
@@ -337,8 +341,12 @@
         throw new Error(`Source not found: ${src}`);
       }
 
-      if (this.exists(dest) && !overwrite) {
-        throw new Error(`Destination already exists: ${dest}`);
+      if (this.exists(dest)) {
+        if (!overwrite) {
+          throw new Error(`Destination already exists: ${dest}`);
+        }
+        // Remove destination before copying if overwrite is true
+        this.remove(dest);
       }
 
       return __APPLE_SPEC__.FileSystem.copyItem(src, dest);
@@ -351,8 +359,12 @@
         throw new Error(`Source not found: ${src}`);
       }
 
-      if (this.exists(dest) && !overwrite) {
-        throw new Error(`Destination already exists: ${dest}`);
+      if (this.exists(dest)) {
+        if (!overwrite) {
+          throw new Error(`Destination already exists: ${dest}`);
+        }
+        // Remove destination before moving if overwrite is true
+        this.remove(dest);
       }
 
       return __APPLE_SPEC__.FileSystem.moveItem(src, dest);

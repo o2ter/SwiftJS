@@ -35,10 +35,12 @@ final class FileSystemAPITests: XCTestCase {
     
     private func createTempDir(context: SwiftJS) -> String {
         let script = """
-            const tempBase = _FileSystem.temp;
-            const testDir = Path.join(tempBase, 'SwiftJS-FSAPITests-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9));
-            _FileSystem.mkdir(testDir);
-            testDir
+            (() => {
+                const tempBase = _FileSystem.temp;
+                const testDir = Path.join(tempBase, 'SwiftJS-FSAPITests-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9));
+                _FileSystem.mkdir(testDir);
+                return testDir;
+            })()
         """
         return context.evaluateScript(script).toString()
     }
@@ -1349,11 +1351,12 @@ final class FileSystemAPITests: XCTestCase {
             _FileSystem.chdir(originalCwd);
             const restoredCwd = _FileSystem.cwd;
             
+            // Use Path.normalize to handle symlinks like /var -> /private/var
             ({
                 result: result,
                 originalCwd: originalCwd,
                 changedTo: newCwd,
-                changedSuccessfully: newCwd === tempDir,
+                changedSuccessfully: Path.normalize(newCwd) === Path.normalize(tempDir),
                 restored: restoredCwd === originalCwd
             })
         """
